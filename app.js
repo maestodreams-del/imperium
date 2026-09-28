@@ -309,7 +309,7 @@ function imperialIcon(id){
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
     chat:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h6"/></svg>',
     team:'<svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20c0-4 2.5-6 6-6s6 2 6 6M15 15c3 0 5 1.5 5 5"/></svg>',
-    settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
+    profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4.2 2.8-7 7-7s7 2.8 7 7"/></svg>',settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
   };return p[id]||'';
 }
 function nav(id,label){return `<button class="navitem ${state.tab===id?'active':''}" data-tab="${id}"><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
@@ -337,8 +337,8 @@ function render(){
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${u.role==='admin'?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('settings','System')}</div></nav>
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   bind();
 }
@@ -536,6 +536,28 @@ function renderActivityPage(){return `<div class="toolbar"><div><div class="eyeb
 function renderTeamPage(){
   return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Nowy pracownik instaluje ten sam APK i wybiera „Utwórz konto pracownika”. Potem tutaj przypisujesz mu obiekty i możesz otworzyć jego kartę pracy.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>${u.role==='admin'?'Administrator':'Pracownik'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions">${isAdmin()||u.id===currentUser().id?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
 }
+function taskProgressStats(userId){
+  const all=state.db.tasks||[], mine=all.filter(t=>t.claimedBy===userId);
+  const done=mine.filter(t=>t.status==='done').length, active=mine.filter(t=>t.status!=='done').length;
+  return {mine,done,active,total:mine.length,pct:mine.length?Math.round(done/mine.length*100):0};
+}
+function renderProgressBar(label,done,total,pct,extra=''){
+  return `<div class="progress-module"><div class="progress-head"><div><span>${label}</span><b>${done} / ${total}</b></div><strong>${pct}%</strong></div><div class="progress-track"><i style="width:${Math.max(0,Math.min(100,pct))}%"></i></div>${extra?`<small>${extra}</small>`:''}</div>`;
+}
+function renderProfilePage(){
+  const u=currentUser(), ps=taskProgressStats(u.id), all=state.db.tasks||[], allDone=all.filter(t=>t.status==='done').length, allPct=all.length?Math.round(allDone/all.length*100):0;
+  const active=ps.mine.filter(t=>t.status!=='done').sort((a,b)=>new Date(a.deadlineAt||a.createdAt)-new Date(b.deadlineAt||b.createdAt));
+  const completed=ps.mine.filter(t=>t.status==='done').slice().sort((a,b)=>new Date(b.completedAt||b.createdAt)-new Date(a.completedAt||a.createdAt)).slice(0,5);
+  return `<section class="profile-page">
+    <div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL COMMAND FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div><div class="profile-balance"><span>SALDO</span><b>${coinBalance(u.id)} NK</b></div></div>
+    <div class="profile-progress-grid">${renderProgressBar('MOJA REALIZACJA',ps.done,ps.total,ps.pct,ps.active+' aktywnych')}${renderProgressBar('REALIZACJA IMPERIUM',allDone,all.length,allPct,'wszystkie zadania systemu')}</div>
+    <div class="profile-section-head"><div><div class="eyebrow">PRZYDZIAŁ</div><h3>Moje zadania</h3></div><span>${active.length} AKTYWNE</span></div>
+    <div class="profile-missions">${active.length?active.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak aktywnych zadań.</div>'}</div>
+    <div class="profile-section-head compact"><div><div class="eyebrow">ARCHIWUM</div><h3>Ostatnio wykonane</h3></div></div>
+    <div class="profile-history">${completed.length?completed.map(t=>`<button class="history-row" data-history-task="${t.id}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'')} • ${fmtDate(t.completedAt||t.createdAt)}</small></span><em>WYKONANE</em></button>`).join(''):'<div class="empty compact">Brak wykonanych zadań.</div>'}</div>
+  </section>`;
+}
+
 function renderSettingsPage(){
   const u=currentUser(),code=state.mode==='cloud'?configCode():'';
   return `<div class="toolbar"><div><div class="eyebrow">System</div><h2 class="section-title">Ustawienia</h2></div></div>
