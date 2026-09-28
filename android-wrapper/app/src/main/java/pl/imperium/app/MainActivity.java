@@ -161,6 +161,130 @@ private void deleteDirectory(File file) {
 
     file.delete();
 }
+   private void downloadAndInstallUpdate(
+        int version,
+        String versionName,
+        String packageUrl,
+        String accessToken,
+        String apiKey
+) {
+
+    new Thread(() -> {
+
+        File zipFile =
+                new File(updatesDir, "update.zip");
+
+        try {
+
+            // Чистим старый staging
+            if (stagingWebDir.exists()) {
+                deleteDirectory(stagingWebDir);
+            }
+
+            if (zipFile.exists()) {
+                zipFile.delete();
+            }
+
+            URL url = new URL(packageUrl);
+
+            HttpURLConnection connection =
+                    (HttpURLConnection) url.openConnection();
+
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(15000);
+            connection.setReadTimeout(30000);
+
+            connection.setRequestProperty(
+                    "Authorization",
+                    "Bearer " + accessToken
+            );
+
+            connection.setRequestProperty(
+        "apikey",
+        apiKey
+);
+
+            connection.connect();
+
+            int responseCode =
+                    connection.getResponseCode();
+
+            if (responseCode < 200 ||
+                    responseCode >= 300) {
+
+                throw new Exception(
+                        "HTTP " + responseCode
+                );
+            }
+
+            try (
+                    InputStream input =
+                            connection.getInputStream();
+
+                    FileOutputStream output =
+                            new FileOutputStream(zipFile)
+            ) {
+
+                byte[] buffer = new byte[8192];
+                int count;
+
+                while ((count = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, count);
+                }
+            }
+
+            connection.disconnect();
+
+            // ZIP → staging
+            unzipUpdate(
+                    zipFile,
+                    stagingWebDir
+            );
+
+            // staging → active
+            activateStagingUpdate();
+
+            // Zapamiętujemy wersję dopiero po udanej instalacji
+            saveInstalledWebVersion(version);
+
+            zipFile.delete();
+
+            runOnUiThread(() -> {
+
+                Toast.makeText(
+                        MainActivity.this,
+                        "IMPERIUM "
+                                + versionName
+                                + " — aktualizacja zakończona",
+                        Toast.LENGTH_SHORT
+                ).show();
+
+                loadImperium();
+            });
+
+        } catch (Exception e) {
+
+            if (zipFile.exists()) {
+                zipFile.delete();
+            }
+
+            if (stagingWebDir != null &&
+                    stagingWebDir.exists()) {
+                deleteDirectory(stagingWebDir);
+            }
+
+            runOnUiThread(() ->
+                    Toast.makeText(
+                            MainActivity.this,
+                            "Błąd aktualizacji: "
+                                    + e.getMessage(),
+                            Toast.LENGTH_LONG
+                    ).show()
+            );
+        }
+
+    }).start();
+}
     private void activateStagingUpdate() throws Exception {
 
     File stagingIndex =
