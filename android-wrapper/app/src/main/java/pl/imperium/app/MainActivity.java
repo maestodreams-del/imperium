@@ -14,6 +14,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -35,6 +38,37 @@ import java.net.URL;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 public class MainActivity extends Activity {
+
+    private void hideSystemBars() {
+        // The WebView must already be attached to the window. Keep decor fitting
+        // system windows so transient Samsung bars cannot cover the bottom menu.
+        if (web == null || web.getWindowToken() == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().setDecorFitsSystemWindows(true);
+            WindowInsetsController controller = web.getWindowInsetsController();
+            if (controller != null) {
+                controller.setSystemBarsBehavior(
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsets.Type.systemBars());
+            }
+        } else {
+            web.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) web.post(this::hideSystemBars);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && web != null) web.post(this::hideSystemBars);
+    }
 
     private static final int FILE_CHOOSER_REQ = 9131;
     private static final int NOTIFICATION_REQ = 9132;
@@ -385,6 +419,7 @@ private void loadImperium() {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         createNotificationChannel();
 
         web = new WebView(this);
@@ -466,6 +501,7 @@ private void loadImperium() {
 loadImperium();
 
         setContentView(web);
+        web.post(this::hideSystemBars);
     }
 
     @Override
