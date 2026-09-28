@@ -25,13 +25,25 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build IMPERIUM APK
+      - name: Restore IMPERIUM signing key
+        shell: bash
+        run: |
+          echo "${{ secrets.IMPERIUM_KEYSTORE_BASE64 }}" | base64 --decode > android-wrapper/imperium-release.jks
+
+      - name: Build signed IMPERIUM release
         working-directory: android-wrapper
-        run: gradle :app:assembleDebug --stacktrace
+        env:
+          IMPERIUM_KEYSTORE_PASSWORD: ${{ secrets.IMPERIUM_KEYSTORE_PASSWORD }}
+          IMPERIUM_KEY_PASSWORD: ${{ secrets.IMPERIUM_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Rename APK
+        run: |
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk IMPERIUM-5.1.0.apk
 
       - name: Upload IMPERIUM APK
         uses: actions/upload-artifact@v4
         with:
-          name: IMPERIUM-apk
-          path: android-wrapper/app/build/outputs/apk/debug/app-debug.apk
+          name: IMPERIUM-5.1.0
+          path: IMPERIUM-5.1.0.apk
           if-no-files-found: error
