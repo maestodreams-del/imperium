@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -57,6 +57,7 @@ function seed(){
       {id:'c-demo-1',userId:'u-mikolaj',taskId:null,kind:'adjustment',amount:100,description:'Premia startowa IMPERIUM',createdBy:'u-admin',createdAt:new Date(t-4000000).toISOString()},
       {id:'c-demo-2',userId:'u-zenon',taskId:null,kind:'adjustment',amount:60,description:'Premia za wzorową pracę',createdBy:'u-admin',createdAt:new Date(t-3000000).toISOString()}
     ],
+    attendance:[],
     events:[
       {id:uid(),type:'system',text:'IMPERIUM uruchomione',userId:'u-admin',taskId:null,createdAt:new Date(t-12000000).toISOString()},
       {id:uid(),type:'claim',text:'Mikołaj przejął zadanie „Odczyt liczników”',userId:'u-mikolaj',taskId:'t2',createdAt:new Date(t-1600000).toISOString()},
@@ -227,7 +228,7 @@ async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -236,8 +237,10 @@ async function loadCloudDB({silent=false}={}){
       pgGet('task_attachments?select=*&order=created_at.asc'),
       pgGet('events?select=*&order=created_at.desc&limit=100'),
       pgGet('disciplinary_records?select=*&order=created_at.desc'),
-      pgGet('coin_transactions?select=*&order=created_at.desc')
+      pgGet('coin_transactions?select=*&order=created_at.desc'),
+      pgGet('work_attendance?select=*&order=started_at.desc&limit=500').catch(()=>[])
     ]);
+    state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at}));
     state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
@@ -319,8 +322,8 @@ function render(){
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div><h1>IMPERIUM</h1><small><b class="latin-motto">Ad gloriam Imperatoris Nikitae</b><span>Na chwałę Imperatora Nikity</span></small></div></div><div class="top-actions"><span class="${state.mode==='cloud'?'cloud-state':'cloud-state offline'}">${state.mode==='cloud'?'☁ ONLINE':'DEMO'}</span><span class="coin-badge">🪙 ${coinBalance(u.id)} NK</span><span class="badge">${u.role==='admin'?'ADMIN':'PRACOWNIK'}</span>${u.role==='admin'?'<button class="goldbtn" id="new-task">+ Zadanie</button>':''}<button class="iconbtn" id="logout" title="Wyloguj">↪</button></div></div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','▦','Zadania')}${nav('locations','⌖','Obiekty')}${nav('activity','◴','Aktywność')}${nav('chat','💬','Czat')}${nav('team','♟','Zespół')}${nav('settings','⚙','Ustawienia')}</div></nav>${renderModal()}</div>`;
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','▦','Zadania')}${nav('locations','⌖','Obiekty')}${nav('activity','◴','Aktywność')}${nav('attendance','📍','Meldunek')}${nav('chat','💬','Czat')}${nav('team','♟','Zespół')}${nav('settings','⚙','Ustawienia')}</div></nav>${renderModal()}</div>`;
   bind();
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
@@ -462,6 +465,34 @@ function taskCard(t,u){
 function renderLocationsPage(){
   const visible=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
   return `<div class="toolbar"><div><div class="eyebrow">Struktura</div><h2 class="section-title">Obiekty / lokalizacje</h2></div>${isAdmin()?'<button class="goldbtn" id="add-location">+ Obiekt</button>':''}</div><div class="list">${visible.map(l=>{const count=state.db.tasks.filter(t=>t.locationId===l.id&&t.status!=='done').length;return `<div class="row"><div class="row-left"><div class="avatar">${initials(l.name)}</div><div class="row-main"><b>${esc(l.name)}</b><small>${esc([l.city,l.address].filter(Boolean).join(' • ')||'Brak adresu')}</small>${l.description?`<div class="subtle">${esc(l.description)}</div>`:''}</div></div><div class="row-actions"><span class="badge">${count} aktywne</span>${isAdmin()?`<button class="smallbtn" data-edit-location="${l.id}">Edytuj</button>`:''}</div></div>`}).join('')||'<div class="empty">Brak obiektów.</div>'}</div>`;
+}
+function attendanceDuration(a){return duration(new Date(a.endedAt||Date.now()).getTime()-new Date(a.startedAt).getTime());}
+function renderAttendancePage(){
+  const u=currentUser(), rows=(state.attendance||[]), active=rows.filter(a=>!a.endedAt);
+  const mineActive=active.find(a=>a.userId===u.id);
+  const visibleLocs=isAdmin()?state.db.locations:state.db.locations.filter(l=>u.locationIds.includes(l.id));
+  const history=(isAdmin()?rows:rows.filter(a=>a.userId===u.id)).slice(0,100);
+  return `<section class="hero"><div class="hero-card"><div class="eyebrow">EWIDENCJA OBECNOŚCI</div><h2>📍 Meldunek na obiekcie</h2><p>${isAdmin()?'Sprawdź, kto aktualnie pracuje na obiektach, oraz historię meldunków.':'Rozpocznij pracę na obiekcie. IMPERIUM zapisze dokładny czas rozpoczęcia i zakończenia.'}</p></div></section>
+  ${isAdmin()?`<div class="settings-card"><div class="subheading">Kto jest teraz na obiekcie</div><div class="attendance-live">${active.length?active.map(a=>`<div class="attendance-live-row"><span class="attendance-dot"></span><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} • od ${fmtDate(a.startedAt)}</small></div><strong data-attendance-start="${a.startedAt}">${attendanceDuration(a)}</strong></div>`).join(''):'<div class="empty compact">Nikt nie jest teraz zameldowany.</div>'}</div></div>`:
+  `<div class="settings-card attendance-checkin"><div class="subheading">Twój meldunek</div>${mineActive?`<div class="attendance-active"><div><span class="attendance-dot"></span><b>${esc(getLoc(mineActive.locationId)?.name||'Obiekt')}</b><small>Praca rozpoczęta: ${fmtDate(mineActive.startedAt)}</small><strong data-attendance-start="${mineActive.startedAt}">${attendanceDuration(mineActive)}</strong></div><button class="dangerbtn" id="attendance-stop">Zakończ pracę</button></div>`:`<div class="field"><label>Obiekt</label><select id="attendance-location">${visibleLocs.filter(l=>l.active!==false).map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div><button class="goldbtn" id="attendance-start" ${visibleLocs.length?'':'disabled'}>Rozpocznij pracę</button>${visibleLocs.length?'':'<div class="status-note">Administrator nie przypisał Ci jeszcze żadnego obiektu.</div>'}`}</div>`}
+  <div class="toolbar"><div><div class="eyebrow">Dziennik pracy</div><h2 class="section-title">${isAdmin()?'Historia meldunków':'Moja historia'}</h2></div></div>
+  <div class="settings-card attendance-history">${history.length?history.map(a=>`<div class="attendance-row"><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>⌖ ${esc(getLoc(a.locationId)?.name||'Obiekt')}</small></div><div class="attendance-times"><span>${fmtDate(a.startedAt)} → ${a.endedAt?fmtDate(a.endedAt):'TERAZ'}</span><b>${attendanceDuration(a)}</b></div></div>`).join(''):'<div class="empty">Brak meldunków.</div>'}</div>`;
+}
+async function startAttendance(){
+  const locationId=document.getElementById('attendance-location')?.value;if(!locationId)return toast('Wybierz obiekt.');
+  await withAction('Rozpoczynanie pracy…',async()=>{
+    if(state.mode==='demo'){state.db.attendance ||= [];const a={id:uid(),userId:currentUser().id,locationId,startedAt:nowISO(),endedAt:null};state.db.attendance.unshift(a);state.attendance=state.db.attendance;await logEvent('attendance_start',`${currentUser().name} rozpoczął pracę — ${getLoc(locationId)?.name||'obiekt'}`);saveDemoDB();}
+    else{await cloudFetch('/rest/v1/rpc/start_work_attendance',{method:'POST',body:{p_location_id:locationId}});await logEvent('attendance_start',`${currentUser().name} rozpoczął pracę — ${getLoc(locationId)?.name||'obiekt'}`);await loadCloudDB({silent:true});}
+    notify('Meldunek IMPERIUM',`Rozpoczęto pracę: ${getLoc(locationId)?.name||'obiekt'}`);
+  });
+}
+async function stopAttendance(){
+  const a=(state.attendance||[]).find(x=>x.userId===currentUser().id&&!x.endedAt);if(!a)return;
+  await withAction('Kończenie pracy…',async()=>{
+    if(state.mode==='demo'){a.endedAt=nowISO();await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);saveDemoDB();}
+    else{await cloudFetch('/rest/v1/rpc/stop_work_attendance',{method:'POST',body:{}});await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);await loadCloudDB({silent:true});}
+    notify('Meldunek IMPERIUM',`Zakończono pracę: ${getLoc(a.locationId)?.name||'obiekt'}`);
+  });
 }
 function renderActivityPage(){return `<div class="toolbar"><div><div class="eyebrow">Dziennik</div><h2 class="section-title">Aktywność</h2></div></div><div class="settings-card">${state.db.events.slice(0,100).map(e=>`<div class="activity"><p>${esc(e.text)}</p><small>${fmtDate(e.createdAt)}</small></div>`).join('')||'<div class="empty">Brak zdarzeń.</div>'}</div>`;}
 function renderTeamPage(){
@@ -608,6 +639,8 @@ setTimeout(()=>{
   document.getElementById('copy-code')?.addEventListener('click',async()=>{const code=configCode();try{await navigator.clipboard.writeText(code);toast('Kod skopiowany.');}catch(e){toast('Przytrzymaj kod i skopiuj go ręcznie.');}});
   document.getElementById('server-settings')?.addEventListener('click',()=>{state.modal='cloudSetup';render();});
   document.getElementById('cloud-logout')?.addEventListener('click',signOutCloud);
+  document.getElementById('attendance-start')?.addEventListener('click',startAttendance);
+  document.getElementById('attendance-stop')?.addEventListener('click',stopAttendance);
   updateTimers();
 }
 
@@ -804,7 +837,8 @@ async function openAttachment(id){
     toast(`Nie udało się pobrać: ${e.message}`);
   }
 }
-function updateTimers(){document.querySelectorAll('[data-deadline]').forEach(el=>{if(!el.dataset.deadline)return;const ms=new Date(el.dataset.deadline)-Date.now();el.textContent=duration(ms);el.classList.toggle('over',ms<0);});}
+function updateTimers(){
+  document.querySelectorAll('[data-attendance-start]').forEach(el=>{const tick=()=>{el.textContent=duration(Date.now()-new Date(el.dataset.attendanceStart).getTime());};tick();});document.querySelectorAll('[data-deadline]').forEach(el=>{if(!el.dataset.deadline)return;const ms=new Date(el.dataset.deadline)-Date.now();el.textContent=duration(ms);el.classList.toggle('over',ms<0);});}
 
 fileInput.addEventListener('change',()=>{const max=(BASE_CFG.MAX_ATTACHMENT_MB||50)*1024*1024,arr=[...fileInput.files],too=arr.find(f=>f.size>max);if(too){toast(`${too.name} przekracza limit ${BASE_CFG.MAX_ATTACHMENT_MB||50} MB.`);fileInput.value='';return;}selectedFiles=arr;const box=document.getElementById('file-list');if(box)box.innerHTML=selectedFiles.map(f=>`<span class="filetag">${esc(f.name)} • ${bytes(f.size)}</span>`).join('');});
 window.addEventListener('storage',e=>{if(state.mode==='demo'&&e.key===DB_KEY){state.db=loadDemoDB();render();}});
