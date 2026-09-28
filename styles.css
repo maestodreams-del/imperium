@@ -1321,3 +1321,37 @@ table{background:#0d0f12!important}th{color:#d6bd75!important;background:#17191d
  .aureus-shell .bottomnav-inner{grid-template-columns:repeat(8,1fr)!important}.aureus-shell .bottomnav .navitem{font-size:5.5px!important}.aureus-shell .navitem i,.aureus-shell .navitem svg{width:17px!important;height:17px!important}
  .profile-command{padding:14px}.profile-monogram{width:44px;height:44px}.profile-ident{gap:10px}.profile-ident h2{font-size:19px!important}.profile-balance b{font-size:12px}.profile-progress-grid{grid-template-columns:1fr}.profile-missions{grid-template-columns:1fr}
 }
+
+
+/* AUREUS v5 — TITANIUM BLUE metallic palette */
+:root{
+ --au-bg:#070b10!important;--au-panel:#101820!important;--au-panel2:#17232e!important;
+ --au-gold:#78a9c7!important;--au-gold2:#c3e5f3!important;--au-bronze:#426c86!important;
+ --au-text:#e7f0f4!important;--au-muted:#8193a0!important;--au-line:rgba(111,168,201,.28)!important;
+}
+html,body{background:radial-gradient(circle at 50% -8%,rgba(81,145,184,.18),transparent 34%),linear-gradient(180deg,#0b1118,#05080c 76%)!important}
+body:after{background-image:linear-gradient(rgba(104,165,201,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(104,165,201,.028) 1px,transparent 1px)!important}
+body:before{background:linear-gradient(90deg,transparent,#365e77,#b9e1f1,#365e77,transparent)!important;box-shadow:0 0 20px rgba(93,169,214,.4)!important}
+.panel,.card,.task,.hero,.settings-card,.modal,.chat-panel{background:linear-gradient(135deg,rgba(21,31,40,.98),rgba(7,11,16,.98))!important;border-color:rgba(104,164,198,.26)!important;box-shadow:0 14px 38px rgba(0,0,0,.42),inset 0 1px rgba(202,236,250,.055)!important}
+h1,h2,h3,.brand,.section-title{color:#eaf3f6!important;text-shadow:0 0 17px rgba(112,184,222,.11)!important}.motto,.eyebrow{color:#8fc3df!important}
+input,textarea,select{background:#071019!important;border-color:rgba(105,169,204,.34)!important;color:#e5eff4!important}
+input:focus,textarea:focus,select:focus{border-color:#78b3d3!important;box-shadow:0 0 0 2px rgba(90,160,199,.1),0 0 18px rgba(75,149,190,.11)!important}
+button:not(.ghost):not(.dangerbtn),.btn:not(.ghost):not(.dangerbtn),.goldbtn{color:#071019!important;background:linear-gradient(180deg,#b9dce9,#628da8)!important;border-color:#c9e8f3!important;box-shadow:0 0 18px rgba(82,153,191,.15),inset 0 1px rgba(255,255,255,.38)!important}
+button.ghost,.btn.ghost{color:#b8ced9!important;background:#091119!important;border-color:rgba(100,158,190,.3)!important}
+button.active,.btn.active,.tab.active{color:#061018!important;background:linear-gradient(180deg,#c7e7f1,#719bb3)!important;border-color:#cdeaf4!important}
+.status-note,.coin,.coin-badge,.coin-task-box,.filetag,.attachment{color:#a9ccdc!important;background:rgba(79,145,181,.08)!important;border-color:rgba(100,165,199,.23)!important}
+th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,160,193,.13)!important}
+.bottomnav{border-top-color:rgba(105,166,198,.3)!important}.bottomnav .navitem.active{color:#a9d7eb!important;background:linear-gradient(180deg,rgba(75,146,184,.14),transparent)!important;box-shadow:inset 0 2px #6ca7c7!important}
+.aureus-shell .sigil{border-color:#5588a5!important;background:linear-gradient(145deg,#15232d,#070b10)!important}.aureus-shell .sigil b{color:#b9ddeb!important}
+.aureus-shell .brand-copy small b,.aureus-shell .chip.active,.mission-object b,.attendance-live-row strong,.attendance-times b,.attendance-active strong{color:#85bad5!important}
+.system-dot.online{background:#72badc!important;box-shadow:0 0 10px #5aa8cf!important}
+.command-hero .hero-card{border-color:rgba(102,166,199,.31)!important;background:linear-gradient(120deg,rgba(17,31,41,.9),rgba(6,10,15,.96))!important}
+.hero-scan{background:linear-gradient(90deg,#73afcd 0 28%,#1e303b 28% 100%)!important}
+.command-hero .stat{border-color:rgba(102,166,199,.2)!important;background:#091119!important}.command-hero .stat b{color:#9dcce1!important}
+.aureus-shell .filters .chip{border-bottom-color:#233844!important}.aureus-shell .filters .chip.active{color:#a9d6e8!important;border-bottom-color:#6ba7c7!important}
+.mission-card{border-color:rgba(101,163,195,.2)!important;background:linear-gradient(135deg,#111b23,#070c11)!important}.mission-rail{background:#5689a5!important}
+.mission-title{color:#e4eef2!important}.mission-data{background:rgba(89,153,187,.13)!important;border-color:rgba(89,153,187,.14)!important}.mission-data>div{background:#081017!important}.mission-data b{color:#a9c9d8!important}
+.mission-timer{background:#070c11!important;border-color:#20323d!important}.mission-timer strong{color:#90c3db!important}
+.mission-flags span{color:#819aa7!important;border-color:#243743!important}.aureus-shell .bottomnav .navitem{background:#070c11!important;color:#71838d!important}.aureus-shell .bottomnav .navitem.active{background:linear-gradient(180deg,rgba(77,147,184,.15),#070c11 70%)!important;color:#a9d8eb!important;box-shadow:inset 0 2px #68a6c6!important}
+.profile-command{border-color:rgba(98,160,193,.26)!important;background:linear-gradient(120deg,#111d25,#070c11)!important}.profile-monogram{border-color:#5689a5!important;background:#070c11!important;color:#b8ddea!important}.profile-balance b,.progress-head strong{color:#9bcbe0!important}.profile-progress-grid .progress-module{border-color:rgba(97,160,193,.2)!important;background:#081017!important}.progress-track{background:#192932!important}.progress-track i{background:linear-gradient(90deg,#315f79,#9ed2e7)!important;box-shadow:0 0 11px rgba(99,181,222,.3)!important}
+::-webkit-scrollbar-track{background:#070c11!important}::-webkit-scrollbar-thumb{background:#416f88!important}
