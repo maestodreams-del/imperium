@@ -45,6 +45,7 @@ private File activeWebDir;
 private File stagingWebDir;
 private static final String UPDATE_PREFS = "imperium_update_prefs";
 private static final String KEY_WEB_VERSION = "web_version";
+private static final int BUNDLED_WEB_VERSION = 1;
 
 private int getInstalledWebVersion() {
     return getSharedPreferences(
@@ -65,9 +66,20 @@ private void saveInstalledWebVersion(int version) {
 private void prepareUpdateStorage() {
     updatesDir = new File(getFilesDir(), "imperium_updates");
     activeWebDir = new File(updatesDir, "active");
-stagingWebDir = new File(updatesDir, "staging");
+    stagingWebDir = new File(updatesDir, "staging");
     if (!updatesDir.exists()) {
         updatesDir.mkdirs();
+    }
+
+    // APK zawiera co najmniej tę wersję interfejsu.
+    // Jeśli zachowany web-update jest starszy lub równy wersji w APK,
+    // usuwamy go i startujemy ze świeżych android_asset.
+    int installedWebVersion = getInstalledWebVersion();
+    if (activeWebDir.exists() && installedWebVersion <= BUNDLED_WEB_VERSION) {
+        deleteDirectory(activeWebDir);
+        saveInstalledWebVersion(BUNDLED_WEB_VERSION);
+    } else if (!activeWebDir.exists() && installedWebVersion < BUNDLED_WEB_VERSION) {
+        saveInstalledWebVersion(BUNDLED_WEB_VERSION);
     }
 }
 private void unzipUpdate(File zipFile, File destination) throws Exception {
