@@ -211,3 +211,902 @@ th {
         max-width: calc(100vw - 24px) !important;
     }
 }
+/* =========================================================
+   IMPERIUM GOLD — AD GLORIAM IMPERATORIS NIKITAE
+   ========================================================= */
+
+:root {
+  --imperium-gold: #d6ad4a;
+  --imperium-gold-light: #f1d98a;
+  --imperium-gold-dark: #80601d;
+  --imperium-black: #070707;
+  --imperium-panel: #10100f;
+  --imperium-burgundy: #321014;
+}
+
+/* Główne tło */
+body {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(214,173,74,.11), transparent 38%),
+    linear-gradient(180deg, #0b0b0a 0%, #050505 100%);
+}
+
+/* Nagłówki */
+h1,
+h2,
+h3,
+.brand {
+  letter-spacing: .055em;
+  text-shadow:
+    0 1px 0 #000,
+    0 0 14px rgba(214,173,74,.15);
+}
+
+/* Główna marka IMPERIUM */
+.brand {
+  color: var(--imperium-gold-light);
+}
+
+.motto {
+  color: #bda365;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* Imperialne panele */
+.panel,
+.hero,
+.card,
+.task,
+.modal {
+  border: 1px solid rgba(214,173,74,.30);
+  background:
+    linear-gradient(145deg, rgba(28,25,18,.96), rgba(9,9,9,.98));
+  box-shadow:
+    0 10px 30px rgba(0,0,0,.30),
+    inset 0 1px 0 rgba(255,224,143,.05);
+}
+
+/* Zadania */
+.task {
+  position: relative;
+  overflow: hidden;
+}
+
+.task::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    var(--imperium-gold-light),
+    var(--imperium-gold-dark)
+  );
+  box-shadow: 0 0 10px rgba(214,173,74,.25);
+}
+
+/* Przyciski */
+button,
+.btn {
+  border: 1px solid rgba(214,173,74,.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.07),
+    0 4px 12px rgba(0,0,0,.22);
+  transition:
+    transform .15s ease,
+    border-color .15s ease,
+    box-shadow .15s ease;
+}
+
+button:active,
+.btn:active {
+  transform: scale(.98);
+}
+
+button:not(.ghost),
+.btn:not(.ghost) {
+  background:
+    linear-gradient(180deg, #d8b75c 0%, #a57b26 100%);
+  color: #0b0905;
+  font-weight: 800;
+}
+
+button:not(.ghost):hover,
+.btn:not(.ghost):hover {
+  border-color: var(--imperium-gold-light);
+  box-shadow:
+    0 0 16px rgba(214,173,74,.20),
+    inset 0 1px 0 rgba(255,255,255,.16);
+}
+
+/* Pola formularzy */
+input,
+textarea,
+select {
+  background: rgba(5,5,5,.82);
+  border: 1px solid rgba(214,173,74,.26);
+  color: #f1eadb;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--imperium-gold);
+  box-shadow: 0 0 0 2px rgba(214,173,74,.10);
+}
+
+/* Modal — imperialna rama */
+.modal {
+  border: 1px solid rgba(226,188,89,.46);
+  box-shadow:
+    0 24px 70px rgba(0,0,0,.72),
+    0 0 25px rgba(214,173,74,.08),
+    inset 0 0 35px rgba(214,173,74,.025);
+}
+
+/* Nikitocoiny */
+.coin,
+.coin-badge,
+.coin-task-box {
+  border-color: rgba(241,217,138,.48) !important;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(79,59,18,.32),
+      rgba(16,13,7,.88)
+    ) !important;
+  box-shadow:
+    inset 0 0 18px rgba(214,173,74,.06),
+    0 4px 14px rgba(0,0,0,.18);
+}
+
+/* Priorytet pilny / elementy ostrzegawcze */
+.danger,
+.urgent {
+  border-color: rgba(137,42,48,.65);
+  box-shadow: 0 0 12px rgba(95,21,27,.13);
+}
+
+/* Delikatna złota linia na górze aplikacji */
+body::before {
+  content: "";
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      var(--imperium-gold-dark),
+      var(--imperium-gold-light),
+      var(--imperium-gold-dark),
+      transparent
+    );
+}
+
+/* Mobile — zachowujemy pełną responsywność */
+@media (max-width: 700px) {
+  .panel,
+  .hero,
+  .card,
+  .task,
+  .modal {
+    max-width: 100%;
+  }
+
+  .task::before {
+    top: 9px;
+    bottom: 9px;
+  }
+
+  button,
+  .btn {
+    min-height: 44px;
+  }
+
+  input,
+  textarea,
+  select {
+    max-width: 100%;
+  }
+}
+/* =========================================================
+   IMPERIUM LIGHT GOLD
+   Lux • Aurum • Ordo
+   ========================================================= */
+
+:root {
+  --light-gold: #c89b3c;
+  --light-gold-bright: #e4c36a;
+  --light-gold-deep: #8c6723;
+
+  --light-bg: #d8d2c5;
+  --light-surface: #f2eee5;
+  --light-surface-2: #e7e0d3;
+
+  --light-text: #211d17;
+  --light-muted: #756b5b;
+  --light-border: rgba(139, 103, 35, .34);
+}
+
+/* GŁÓWNE TŁO */
+
+html,
+body {
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(255, 239, 190, .35),
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      #d9d3c7 0%,
+      #c7c0b3 100%
+    ) !important;
+
+  color: var(--light-text);
+}
+
+/* DELIKATNY IMPERIALNY WZÓR */
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+
+  background-image:
+    linear-gradient(
+      30deg,
+      rgba(126, 94, 32, .025) 12%,
+      transparent 12.5%,
+      transparent 87%,
+      rgba(126, 94, 32, .025) 87.5%
+    );
+
+  background-size: 42px 42px;
+}
+
+/* ZŁOTA LINIA */
+
+body::before {
+  height: 3px !important;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      #8b6828,
+      #efd47d,
+      #b88b32,
+      #efd47d,
+      #8b6828,
+      transparent
+    ) !important;
+
+  box-shadow:
+    0 1px 8px rgba(119, 84, 22, .30);
+}
+
+/* GŁÓWNE PANELE */
+
+.panel,
+.card,
+.task,
+.hero,
+.modal {
+  color: var(--light-text) !important;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(250, 247, 239, .98),
+      rgba(231, 224, 210, .98)
+    ) !important;
+
+  border:
+    1px solid rgba(145, 108, 40, .34) !important;
+
+  box-shadow:
+    0 8px 24px rgba(64, 51, 31, .13),
+    inset 0 1px 0 rgba(255,255,255,.9) !important;
+}
+
+/* KARTY ZADAŃ */
+
+.task {
+  position: relative;
+  overflow: hidden;
+}
+
+.task::before {
+  width: 4px !important;
+
+  background:
+    linear-gradient(
+      180deg,
+      #efd47d,
+      #b48731,
+      #7c591c
+    ) !important;
+
+  box-shadow:
+    1px 0 8px rgba(151, 107, 29, .25) !important;
+}
+
+/* TYTUŁY */
+
+h1,
+h2,
+h3,
+.brand {
+  color: #382b17 !important;
+
+  text-shadow:
+    0 1px 0 rgba(255,255,255,.9),
+    0 0 12px rgba(170,125,40,.08) !important;
+}
+
+.brand {
+  color: #74521c !important;
+  letter-spacing: .075em;
+}
+
+.motto {
+  color: #886c36 !important;
+  letter-spacing: .16em;
+}
+
+/* TEKST POMOCNICZY */
+
+.subtle,
+.modal-sub,
+small {
+  color: var(--light-muted) !important;
+}
+
+/* POLA */
+
+input,
+textarea,
+select {
+  color: #211d17 !important;
+
+  background:
+    rgba(255, 253, 248, .94) !important;
+
+  border:
+    1px solid rgba(130, 96, 34, .35) !important;
+
+  box-shadow:
+    inset 0 1px 3px rgba(55, 43, 25, .06);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #948978 !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: #b18431 !important;
+
+  box-shadow:
+    0 0 0 3px rgba(184, 139, 50, .12) !important;
+}
+
+/* PRZYCISKI GŁÓWNE */
+
+button:not(.ghost):not(.dangerbtn),
+.btn:not(.ghost):not(.dangerbtn),
+.goldbtn {
+  color: #241b0c !important;
+
+  background:
+    linear-gradient(
+      180deg,
+      #efd57f 0%,
+      #d2aa50 52%,
+      #b7872e 100%
+    ) !important;
+
+  border:
+    1px solid #987026 !important;
+
+  box-shadow:
+    0 4px 10px rgba(85, 60, 19, .18),
+    inset 0 1px 0 rgba(255,255,255,.60) !important;
+
+  font-weight: 800;
+}
+
+/* PRZYCISKI DRUGORZĘDNE */
+
+button.ghost,
+.btn.ghost {
+  color: #604719 !important;
+
+  background:
+    rgba(255, 252, 244, .70) !important;
+
+  border:
+    1px solid rgba(137, 101, 35, .35) !important;
+}
+
+/* AKTYWNY PRZYCISK / TAB */
+
+button.active,
+.btn.active,
+.tab.active {
+  color: #211708 !important;
+
+  background:
+    linear-gradient(
+      180deg,
+      #f2d987,
+      #c99b3e
+    ) !important;
+
+  border-color: #9d7427 !important;
+
+  box-shadow:
+    0 3px 12px rgba(116, 81, 23, .22) !important;
+}
+
+/* NIKITOCOINY */
+
+.coin,
+.coin-badge,
+.coin-task-box {
+  color: #5e4314 !important;
+
+  background:
+    linear-gradient(
+      145deg,
+      #fff7dc,
+      #e7d29a
+    ) !important;
+
+  border:
+    1px solid rgba(155, 112, 31, .42) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.8),
+    0 4px 12px rgba(93,67,24,.10) !important;
+}
+
+/* STATUSY */
+
+.status-note {
+  color: #5d503b !important;
+
+  background:
+    rgba(218, 201, 165, .38) !important;
+
+  border:
+    1px solid rgba(132, 101, 44, .23) !important;
+}
+
+/* PILNE / OSTRZEŻENIA */
+
+.danger,
+.urgent,
+.dangerbtn {
+  border-color: rgba(139, 55, 55, .50) !important;
+}
+
+.dangerbtn {
+  color: #fff !important;
+
+  background:
+    linear-gradient(
+      180deg,
+      #a74a4a,
+      #793333
+    ) !important;
+}
+
+/* MODAL */
+
+.modal-bg {
+  background:
+    rgba(34, 29, 21, .54) !important;
+
+  backdrop-filter: blur(5px);
+}
+
+.modal {
+  background:
+    linear-gradient(
+      145deg,
+      #f8f4ea,
+      #ded5c5
+    ) !important;
+
+  border:
+    1px solid rgba(145, 105, 35, .55) !important;
+
+  box-shadow:
+    0 25px 70px rgba(37, 30, 19, .36),
+    inset 0 1px 0 rgba(255,255,255,.9) !important;
+}
+
+/* TABELE */
+
+table {
+  background:
+    rgba(248, 245, 237, .75);
+}
+
+th {
+  color: #604719 !important;
+
+  background:
+    rgba(210, 188, 139, .35) !important;
+}
+
+td {
+  color: #332c22 !important;
+  border-color: rgba(119, 94, 51, .15) !important;
+}
+
+/* ZAŁĄCZNIKI */
+
+.filetag,
+.attachment {
+  color: #59431d !important;
+
+  background:
+    rgba(247, 237, 210, .85) !important;
+
+  border-color:
+    rgba(146, 108, 39, .28) !important;
+}
+
+/* MOBILE */
+
+@media (max-width: 700px) {
+
+  body {
+    background:
+      linear-gradient(
+        180deg,
+        #ded8cc,
+        #c9c2b5
+      ) !important;
+  }
+
+  .panel,
+  .card,
+  .task,
+  .hero,
+  .modal {
+    max-width: 100%;
+  }
+
+  .task {
+    box-shadow:
+      0 5px 15px rgba(57,45,27,.12),
+      inset 0 1px 0 rgba(255,255,255,.9) !important;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    min-height: 44px;
+  }
+}
+/* =========================================================
+   IMPERIUM — CZAT GŁÓWNY
+   ========================================================= */
+
+.chat-page {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.chat-panel {
+  margin-top: 18px;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+/* Nagłówek czatu */
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+
+  padding: 18px 20px;
+
+  border-bottom: 1px solid rgba(140, 103, 35, .25);
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(239, 213, 127, .18),
+      rgba(255,255,255,.20)
+    );
+}
+
+.chat-header h3 {
+  margin: 3px 0 0;
+  font-size: 20px;
+}
+
+/* Okno wiadomości */
+
+.chat-messages {
+  height: min(55vh, 560px);
+  min-height: 350px;
+
+  padding: 20px;
+
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(210, 170, 80, .10),
+      transparent 38%
+    ),
+    rgba(246, 242, 232, .65);
+}
+
+/* Wiadomość */
+
+.chat-message {
+  align-self: flex-start;
+
+  width: fit-content;
+  max-width: 76%;
+
+  padding: 11px 14px;
+
+  border-radius: 4px 16px 16px 16px;
+
+  color: #2c261d;
+
+  background:
+    linear-gradient(
+      145deg,
+      #ffffff,
+      #e9e2d5
+    );
+
+  border: 1px solid rgba(125, 96, 43, .22);
+
+  box-shadow:
+    0 3px 10px rgba(58, 45, 25, .09);
+}
+
+/* Moja wiadomość */
+
+.chat-message.mine {
+  align-self: flex-end;
+
+  border-radius: 16px 4px 16px 16px;
+
+  color: #2a200e;
+
+  background:
+    linear-gradient(
+      145deg,
+      #f4df9d,
+      #d8b65e
+    );
+
+  border-color: rgba(132, 93, 25, .35);
+}
+
+/* Autor + czas */
+
+.chat-message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 18px;
+
+  margin-bottom: 5px;
+
+  font-size: 11px;
+}
+
+.chat-message-head b {
+  color: #77551b;
+  font-size: 12px;
+}
+
+.chat-message-head span {
+  color: #8b8172;
+  white-space: nowrap;
+}
+
+.chat-message.mine .chat-message-head b {
+  color: #60420e;
+}
+
+.chat-message.mine .chat-message-head span {
+  color: rgba(62, 45, 14, .65);
+}
+
+/* Tekst */
+
+.chat-message-text {
+  font-size: 14px;
+  line-height: 1.5;
+
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Pole wysyłania */
+
+.chat-compose {
+  display: grid;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto;
+
+  gap: 10px;
+
+  align-items: end;
+
+  padding: 14px;
+
+  border-top:
+    1px solid rgba(140, 103, 35, .25);
+
+  background:
+    rgba(239, 233, 220, .94);
+}
+
+.chat-compose textarea {
+  width: 100%;
+  min-height: 48px;
+  max-height: 140px;
+
+  resize: vertical;
+
+  margin: 0;
+}
+
+.chat-compose button {
+  min-width: 110px;
+  min-height: 48px;
+}
+
+/* Scrollbar */
+
+.chat-messages::-webkit-scrollbar {
+  width: 7px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(
+      #d5b35b,
+      #9a7026
+    );
+
+  border-radius: 10px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(90, 70, 35, .06);
+}
+
+/* Telefon */
+
+@media (max-width: 700px) {
+
+  .chat-panel {
+    margin-top: 12px;
+  }
+
+  .chat-header {
+    padding: 14px;
+  }
+
+  .chat-messages {
+    height: 52vh;
+    min-height: 300px;
+
+    padding: 12px;
+    gap: 9px;
+  }
+
+  .chat-message {
+    max-width: 88%;
+  }
+
+  .chat-compose {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .chat-compose button {
+    width: 100%;
+  }
+
+  .chat-message-head {
+    gap: 10px;
+  }
+}
+/* IMPERIUM — dekoracje sezonowe */
+
+.season {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.season span {
+  position: absolute;
+  top: -50px;
+  animation: seasonFall 12s linear infinite;
+  font-size: 22px;
+  opacity: .45;
+}
+
+@keyframes seasonFall {
+  0% {
+    transform: translateY(-50px) rotate(0deg);
+  }
+
+  100% {
+    transform: translateY(110vh) rotate(360deg);
+  }
+}
+
+
+/* ===== IMPERIUM — MELDUNEK NA OBIEKCIE ===== */
+.attendance-live,.attendance-history{display:grid;gap:10px}
+.attendance-live-row,.attendance-row,.attendance-active>div{
+  display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid rgba(169,126,38,.28);
+  border-radius:14px;background:rgba(255,250,235,.72)
+}
+.attendance-live-row>div,.attendance-row>div:first-child,.attendance-active>div>div{display:grid;gap:3px;flex:1}
+.attendance-live-row small,.attendance-row small,.attendance-active small{display:block;color:#75684f;margin-top:3px}
+.attendance-live-row strong{margin-left:auto;font-variant-numeric:tabular-nums;color:#8a641b}
+.attendance-dot{width:10px;height:10px;border-radius:50%;background:#3b9b61;box-shadow:0 0 0 4px rgba(59,155,97,.13);flex:0 0 auto}
+.attendance-checkin{max-width:760px;margin-left:auto;margin-right:auto}
+.attendance-active{display:grid;gap:14px}
+.attendance-active>div{align-items:flex-start}
+.attendance-active strong{display:block;margin-top:8px;font-size:28px;font-variant-numeric:tabular-nums;color:#8a641b}
+.attendance-active .dangerbtn{width:100%}
+.attendance-row{justify-content:space-between}
+.attendance-times{text-align:right;display:grid;gap:4px}
+.attendance-times span{font-size:12px;color:#75684f}
+.attendance-times b{font-variant-numeric:tabular-nums;color:#8a641b}
+@media(max-width:700px){
+  .attendance-row{align-items:flex-start;flex-direction:column}
+  .attendance-times{text-align:left}
+  .bottomnav-inner{overflow-x:auto;justify-content:flex-start}
+  .bottomnav .navitem{min-width:78px;flex:0 0 auto}
+}
