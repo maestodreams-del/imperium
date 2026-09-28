@@ -39,11 +39,11 @@ jobs:
 
       - name: Rename APK
         run: |
-          cp android-wrapper/app/build/outputs/apk/release/app-release.apk IMPERIUM-5.2.1.apk
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk IMPERIUM-5.2.2.apk
 
       - name: Upload IMPERIUM APK
         uses: actions/upload-artifact@v4
         with:
-          name: IMPERIUM-5.2.1
-          path: IMPERIUM-5.2.1.apk
+          name: IMPERIUM-5.2.2
+          path: IMPERIUM-5.2.2.apk
           if-no-files-found: error
