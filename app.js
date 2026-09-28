@@ -322,9 +322,15 @@ function render(){
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div><h1>IMPERIUM</h1><small><b class="latin-motto">Ad gloriam Imperatoris Nikitae</b><span>Na chwałę Imperatora Nikity</span></small></div></div><div class="top-actions"><span class="${state.mode==='cloud'?'cloud-state':'cloud-state offline'}">${state.mode==='cloud'?'☁ ONLINE':'DEMO'}</span><span class="coin-badge">🪙 ${coinBalance(u.id)} NK</span><span class="badge">${u.role==='admin'?'ADMIN':'PRACOWNIK'}</span>${u.role==='admin'?'<button class="goldbtn" id="new-task">+ Zadanie</button>':''}<button class="iconbtn" id="logout" title="Wyloguj">↪</button></div></div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <main class="content"><div style="font:700 11px monospace;padding:4px 8px;color:#7a5a18;opacity:.75">WEB=MELDUNEK-DIAG-1 <span id="runtime-diag"></span></div>${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
   <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','▦','Zadania')}${nav('locations','⌖','Obiekty')}${nav('activity','◴','Aktywność')}${nav('attendance','📍','Meldunek')}${nav('chat','💬','Czat')}${nav('team','♟','Zespół')}${nav('settings','⚙','Ustawienia')}</div></nav>${renderModal()}</div>`;
   bind();
+  try{
+    const d=document.getElementById('runtime-diag');
+    if(d && window.AndroidBridge && typeof AndroidBridge.diagnostics==='function'){
+      d.textContent=' | '+AndroidBridge.diagnostics();
+    }
+  }catch(e){}
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
 function renderChatPage(){
