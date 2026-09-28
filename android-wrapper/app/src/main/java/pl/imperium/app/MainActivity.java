@@ -238,9 +238,7 @@ public class MainActivity extends Activity {
         builder
                 .setContentTitle(title)
                 .setContentText(body)
-                .setSmallIcon(
-                        android.R.drawable.ic_dialog_info
-                )
+                .setSmallIcon(R.drawable.ic_notification)
                 .setContentIntent(pi)
                 .setAutoCancel(true);
 
