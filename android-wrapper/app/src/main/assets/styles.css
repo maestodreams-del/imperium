@@ -809,3 +809,250 @@ td {
     min-height: 44px;
   }
 }
+/* =========================================================
+   IMPERIUM — CZAT GŁÓWNY
+   ========================================================= */
+
+.chat-page {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.chat-panel {
+  margin-top: 18px;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+/* Nagłówek czatu */
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+
+  padding: 18px 20px;
+
+  border-bottom: 1px solid rgba(140, 103, 35, .25);
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(239, 213, 127, .18),
+      rgba(255,255,255,.20)
+    );
+}
+
+.chat-header h3 {
+  margin: 3px 0 0;
+  font-size: 20px;
+}
+
+/* Okno wiadomości */
+
+.chat-messages {
+  height: min(55vh, 560px);
+  min-height: 350px;
+
+  padding: 20px;
+
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  background:
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(210, 170, 80, .10),
+      transparent 38%
+    ),
+    rgba(246, 242, 232, .65);
+}
+
+/* Wiadomość */
+
+.chat-message {
+  align-self: flex-start;
+
+  width: fit-content;
+  max-width: 76%;
+
+  padding: 11px 14px;
+
+  border-radius: 4px 16px 16px 16px;
+
+  color: #2c261d;
+
+  background:
+    linear-gradient(
+      145deg,
+      #ffffff,
+      #e9e2d5
+    );
+
+  border: 1px solid rgba(125, 96, 43, .22);
+
+  box-shadow:
+    0 3px 10px rgba(58, 45, 25, .09);
+}
+
+/* Moja wiadomość */
+
+.chat-message.mine {
+  align-self: flex-end;
+
+  border-radius: 16px 4px 16px 16px;
+
+  color: #2a200e;
+
+  background:
+    linear-gradient(
+      145deg,
+      #f4df9d,
+      #d8b65e
+    );
+
+  border-color: rgba(132, 93, 25, .35);
+}
+
+/* Autor + czas */
+
+.chat-message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 18px;
+
+  margin-bottom: 5px;
+
+  font-size: 11px;
+}
+
+.chat-message-head b {
+  color: #77551b;
+  font-size: 12px;
+}
+
+.chat-message-head span {
+  color: #8b8172;
+  white-space: nowrap;
+}
+
+.chat-message.mine .chat-message-head b {
+  color: #60420e;
+}
+
+.chat-message.mine .chat-message-head span {
+  color: rgba(62, 45, 14, .65);
+}
+
+/* Tekst */
+
+.chat-message-text {
+  font-size: 14px;
+  line-height: 1.5;
+
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Pole wysyłania */
+
+.chat-compose {
+  display: grid;
+
+  grid-template-columns:
+    minmax(0, 1fr)
+    auto;
+
+  gap: 10px;
+
+  align-items: end;
+
+  padding: 14px;
+
+  border-top:
+    1px solid rgba(140, 103, 35, .25);
+
+  background:
+    rgba(239, 233, 220, .94);
+}
+
+.chat-compose textarea {
+  width: 100%;
+  min-height: 48px;
+  max-height: 140px;
+
+  resize: vertical;
+
+  margin: 0;
+}
+
+.chat-compose button {
+  min-width: 110px;
+  min-height: 48px;
+}
+
+/* Scrollbar */
+
+.chat-messages::-webkit-scrollbar {
+  width: 7px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(
+      #d5b35b,
+      #9a7026
+    );
+
+  border-radius: 10px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(90, 70, 35, .06);
+}
+
+/* Telefon */
+
+@media (max-width: 700px) {
+
+  .chat-panel {
+    margin-top: 12px;
+  }
+
+  .chat-header {
+    padding: 14px;
+  }
+
+  .chat-messages {
+    height: 52vh;
+    min-height: 300px;
+
+    padding: 12px;
+    gap: 9px;
+  }
+
+  .chat-message {
+    max-width: 88%;
+  }
+
+  .chat-compose {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .chat-compose button {
+    width: 100%;
+  }
+
+  .chat-message-head {
+    gap: 10px;
+  }
+}
