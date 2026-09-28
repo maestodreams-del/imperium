@@ -285,12 +285,132 @@ function render(){
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div><h1>IMPERIUM</h1><small><b class="latin-motto">Ad gloriam Imperatoris Nikitae</b><span>Na chwałę Imperatora Nikity</span></small></div></div><div class="top-actions"><span class="${state.mode==='cloud'?'cloud-state':'cloud-state offline'}">${state.mode==='cloud'?'☁ ONLINE':'DEMO'}</span><span class="coin-badge">🪙 ${coinBalance(u.id)} NK</span><span class="badge">${u.role==='admin'?'ADMIN':'PRACOWNIK'}</span>${u.role==='admin'?'<button class="goldbtn" id="new-task">+ Zadanie</button>':''}<button class="iconbtn" id="logout" title="Wyloguj">↪</button></div></div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','▦','Zadania')}${nav('locations','⌖','Obiekty')}${nav('activity','◴','Aktywność')}${nav('team','♟','Zespół')}${nav('settings','⚙','Ustawienia')}</div></nav>${renderModal()}</div>`;
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','▦','Zadania')}${nav('locations','⌖','Obiekty')}${nav('activity','◴','Aktywność')}${nav('chat','💬','Czat')}${nav('team','♟','Zespół')}${nav('settings','⚙','Ustawienia')}</div></nav>${renderModal()}</div>`;
   bind();
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
-function renderTasksPage(open,prog,rev,urg,u){
+function renderChatPage(){
+  const u=currentUser();
+
+  return `
+    <section class="chat-page">
+
+      <div class="hero">
+        <div class="hero-card">
+          <div class="eyebrow">IMPERIUM COMMUNICATIONS</div>
+          <h2>💬 Czat główny</h2>
+          <p>Wspólny kanał komunikacji wszystkich pracowników IMPERIUM.</p>
+        </div>
+      </div>
+
+      <div class="panel chat-panel">
+
+        <div class="chat-header">
+          <div>
+            <div class="eyebrow">Kanał ogólny</div>
+            <h3>IMPERIUM</h3>
+          </div>
+          <span class="cloud-state">● ONLINE</span>
+        </div>
+
+        <div id="chat-messages" class="chat-messages">
+          <div class="empty">
+            Ładowanie wiadomości…
+          </div>
+        </div>
+
+        <div class="chat-compose">
+          <textarea
+            id="chat-input"
+            maxlength="2000"
+            rows="2"
+            placeholder="Napisz wiadomość, ${esc(u.name)}…"
+          ></textarea>
+
+          <button
+            class="goldbtn"
+            id="chat-send"
+            type="button"
+          >
+            Wyślij ➤
+          </button>
+        </div>
+
+      </div>
+
+    </section>
+  `;
+}
+  async function loadChatMessages(){
+  if(state.mode!=='cloud') return;
+
+  const box=document.getElementById('chat-messages');
+  if(!box)return;
+
+  try{
+    const rows=await pgGet(
+      'chat_messages',
+      'select=id,user_id,message,created_at&order=created_at.asc&limit=200'
+    );
+
+    box.innerHTML=rows.length
+      ? rows.map(m=>{
+          const author=getUser(m.user_id);
+          const mine=m.user_id===currentUser()?.id;
+
+          return `
+            <div class="chat-message ${mine?'mine':''}">
+              <div class="chat-message-head">
+                <b>${esc(author?.name||'Pracownik')}</b>
+                <span>${new Date(m.created_at).toLocaleString('pl-PL')}</span>
+              </div>
+              <div class="chat-message-text">${esc(m.message)}</div>
+            </div>
+          `;
+        }).join('')
+      : '<div class="empty">Brak wiadomości. Rozpocznij rozmowę 👑</div>';
+
+    box.scrollTop=box.scrollHeight;
+
+  }catch(e){
+    box.innerHTML=`<div class="status-note danger-text">Błąd czatu: ${esc(e.message)}</div>`;
+  }
+}
+
+async function sendChatMessage(){
+  if(state.mode!=='cloud'){
+    toast('Czat działa we wspólnej bazie.');
+    return;
+  }
+
+  const input=document.getElementById('chat-input');
+  if(!input)return;
+
+  const message=input.value.trim();
+  if(!message)return;
+
+  const button=document.getElementById('chat-send');
+  if(button)button.disabled=true;
+
+  try{
+    await pgPost('chat_messages',{
+      user_id:currentUser().id,
+      message
+    });
+
+    input.value='';
+    await loadChatMessages();
+
+  }catch(e){
+    toast(`Nie udało się wysłać: ${e.message}`);
+
+  }finally{
+    if(button)button.disabled=false;
+    input.focus();
+  }
+}
+  function renderTasksPage(open,prog,rev,urg,u){
   let tasks=[...state.db.tasks];
   if(u.role!=='admin')tasks=tasks.filter(t=>u.locationIds.includes(t.locationId));
   if(state.filter!=='all')tasks=tasks.filter(t=>state.filter==='mine'?t.claimedBy===u.id&&t.status!=='done':t.status===state.filter);
@@ -387,7 +507,20 @@ function bindCloudSetup(){
   document.getElementById('import-cloud-code')?.addEventListener('click',()=>{try{const c=parseConfigCode(document.getElementById('cloud-code').value);document.getElementById('cloud-url').value=c.url;document.getElementById('cloud-key').value=c.key;toast('Kod wczytany.');}catch(e){toast(e.message);}});
   document.getElementById('save-cloud')?.addEventListener('click',async()=>{try{saveCloudConfig(document.getElementById('cloud-url').value,document.getElementById('cloud-key').value);state.mode='cloud';state.modal=null;state.db=null;state.auth=null;localStorage.removeItem(AUTH_KEY);render();}catch(e){toast(e.message);}});
 }
-function bind(){
+function bind(){if(state.tab==='chat'){
+  setTimeout(()=>loadChatMessages(),0);
+
+  document.getElementById('chat-send')?.addEventListener('click',()=>{
+    sendChatMessage();
+  });
+
+  document.getElementById('chat-input')?.addEventListener('keydown',e=>{
+    if(e.key==='Enter'&&!e.shiftKey){
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+}
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
