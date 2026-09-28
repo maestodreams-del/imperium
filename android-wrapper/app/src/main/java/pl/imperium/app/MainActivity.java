@@ -719,6 +719,7 @@ public void checkWebUpdate(
         String versionName,
         String packageUrl,
         String accessToken
+    String apiKey
 ) {
 
     if (version <= getInstalledWebVersion()) {
