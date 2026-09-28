@@ -43,7 +43,25 @@ public class MainActivity extends Activity {
 private File updatesDir;
 private File activeWebDir;
 private File stagingWebDir;
+private static final String UPDATE_PREFS = "imperium_update_prefs";
+private static final String KEY_WEB_VERSION = "web_version";
 
+private int getInstalledWebVersion() {
+    return getSharedPreferences(
+            UPDATE_PREFS,
+            MODE_PRIVATE
+    ).getInt(KEY_WEB_VERSION, 0);
+}
+
+private void saveInstalledWebVersion(int version) {
+    getSharedPreferences(
+            UPDATE_PREFS,
+            MODE_PRIVATE
+    )
+    .edit()
+    .putInt(KEY_WEB_VERSION, version)
+    .apply();
+}
 private void prepareUpdateStorage() {
     updatesDir = new File(getFilesDir(), "imperium_updates");
     activeWebDir = new File(updatesDir, "active");
