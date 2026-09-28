@@ -1287,3 +1287,24 @@ table{background:#0d0f12!important}th{color:#d6bd75!important;background:#17191d
  .aureus-shell .navitem i,.aureus-shell .navitem svg{width:18px!important;height:18px!important}
  .chat-page{height:calc(100dvh - 138px)!important}
 }
+
+
+/* AUREUS v3 — mission modules, tactical tabs, dark dock */
+.aureus-shell .filters .chip{background:transparent!important;border:0!important;border-bottom:1px solid #332e22!important;color:#77736a!important;border-radius:0!important;box-shadow:none!important;padding:8px 10px!important}
+.aureus-shell .filters .chip.active{background:transparent!important;color:#e2c66f!important;border-bottom:2px solid #c49c3e!important;box-shadow:none!important}
+.mission-card{position:relative!important;padding:18px 18px 14px 22px!important;border:1px solid rgba(201,165,74,.18)!important;border-left:0!important;background:linear-gradient(135deg,#121419,#0a0b0e)!important;overflow:hidden!important}
+.mission-rail{position:absolute;left:0;top:0;bottom:0;width:3px;background:#8e7131}.mission-card:has(.mission-priority.urgent) .mission-rail{background:#9d4144;box-shadow:0 0 12px rgba(157,65,68,.3)}
+.mission-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.mission-object{display:flex;align-items:baseline;gap:8px}.mission-object span,.mission-data span,.mission-timer span{font-size:7px;letter-spacing:.14em;color:#68665f}.mission-object b{font-size:11px;color:#c4a759;letter-spacing:.04em}
+.mission-priority{display:flex;align-items:center;gap:6px;flex:0 0 auto}.mission-priority i{width:6px;height:6px;border-radius:50%;background:#777}.mission-priority span{font:8px monospace;letter-spacing:.08em;color:#777}.mission-priority.high i{background:#c08b42}.mission-priority.urgent i{background:#c65758;box-shadow:0 0 8px #8d3437}.mission-priority.urgent span{color:#c76869}
+.mission-title{font-size:20px!important;line-height:1.22!important;margin:11px 0 8px!important;letter-spacing:.01em!important;color:#eee4ca!important}
+.mission-desc{font-size:12px!important;line-height:1.55!important;color:#8d8980!important;margin:0!important;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.mission-data{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-top:15px;background:rgba(201,165,74,.12);border:1px solid rgba(201,165,74,.12)}
+.mission-data>div{min-width:0;padding:9px;background:#0a0c0f;display:grid;gap:4px}.mission-data b{font:9px monospace;color:#c9b77f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mission-data b.progress{color:#d1ae50}.mission-data b.review{color:#8eb4bd}.mission-data b.done{color:#7e9d78}
+.mission-timer{margin-top:8px;padding:9px 10px;background:#08090b;border:1px solid #27241c;display:flex;align-items:center;justify-content:space-between}.mission-timer strong{font:12px monospace;color:#d6bb68}.mission-timer strong.over{color:#c45b5c}
+.mission-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}.mission-flags{display:flex;gap:5px;flex-wrap:wrap}.mission-flags span{font:7px monospace;color:#7e786b;border:1px solid #302c21;padding:4px 5px}.mission-card .task-actions{display:flex;gap:6px}.mission-card .smallbtn{min-height:30px!important;padding:5px 9px!important;font-size:8px!important;letter-spacing:.08em!important}
+.aureus-shell .bottomnav{background:#07080a!important}.aureus-shell .bottomnav .navitem{background:#08090b!important;color:#716e67!important}.aureus-shell .bottomnav .navitem.active{background:linear-gradient(180deg,rgba(201,165,74,.11),#08090b 70%)!important;color:#e2c66e!important;box-shadow:inset 0 2px #c49c3e!important}
+@media(max-width:700px){
+ .mission-card{padding:15px 13px 12px 17px!important}.mission-title{font-size:18px!important}.mission-desc{-webkit-line-clamp:2}
+ .mission-data{grid-template-columns:repeat(2,1fr)}.mission-footer{align-items:flex-end}.mission-flags{max-width:42%}
+ .aureus-shell .filters .chip{font-size:8px!important;padding:7px 9px!important}
+}
