@@ -211,3 +211,211 @@ th {
         max-width: calc(100vw - 24px) !important;
     }
 }
+/* =========================================================
+   IMPERIUM GOLD — AD GLORIAM IMPERATORIS NIKITAE
+   ========================================================= */
+
+:root {
+  --imperium-gold: #d6ad4a;
+  --imperium-gold-light: #f1d98a;
+  --imperium-gold-dark: #80601d;
+  --imperium-black: #070707;
+  --imperium-panel: #10100f;
+  --imperium-burgundy: #321014;
+}
+
+/* Główne tło */
+body {
+  background:
+    radial-gradient(circle at 50% -10%, rgba(214,173,74,.11), transparent 38%),
+    linear-gradient(180deg, #0b0b0a 0%, #050505 100%);
+}
+
+/* Nagłówki */
+h1,
+h2,
+h3,
+.brand {
+  letter-spacing: .055em;
+  text-shadow:
+    0 1px 0 #000,
+    0 0 14px rgba(214,173,74,.15);
+}
+
+/* Główna marka IMPERIUM */
+.brand {
+  color: var(--imperium-gold-light);
+}
+
+.motto {
+  color: #bda365;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* Imperialne panele */
+.panel,
+.hero,
+.card,
+.task,
+.modal {
+  border: 1px solid rgba(214,173,74,.30);
+  background:
+    linear-gradient(145deg, rgba(28,25,18,.96), rgba(9,9,9,.98));
+  box-shadow:
+    0 10px 30px rgba(0,0,0,.30),
+    inset 0 1px 0 rgba(255,224,143,.05);
+}
+
+/* Zadania */
+.task {
+  position: relative;
+  overflow: hidden;
+}
+
+.task::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    var(--imperium-gold-light),
+    var(--imperium-gold-dark)
+  );
+  box-shadow: 0 0 10px rgba(214,173,74,.25);
+}
+
+/* Przyciski */
+button,
+.btn {
+  border: 1px solid rgba(214,173,74,.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.07),
+    0 4px 12px rgba(0,0,0,.22);
+  transition:
+    transform .15s ease,
+    border-color .15s ease,
+    box-shadow .15s ease;
+}
+
+button:active,
+.btn:active {
+  transform: scale(.98);
+}
+
+button:not(.ghost),
+.btn:not(.ghost) {
+  background:
+    linear-gradient(180deg, #d8b75c 0%, #a57b26 100%);
+  color: #0b0905;
+  font-weight: 800;
+}
+
+button:not(.ghost):hover,
+.btn:not(.ghost):hover {
+  border-color: var(--imperium-gold-light);
+  box-shadow:
+    0 0 16px rgba(214,173,74,.20),
+    inset 0 1px 0 rgba(255,255,255,.16);
+}
+
+/* Pola formularzy */
+input,
+textarea,
+select {
+  background: rgba(5,5,5,.82);
+  border: 1px solid rgba(214,173,74,.26);
+  color: #f1eadb;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--imperium-gold);
+  box-shadow: 0 0 0 2px rgba(214,173,74,.10);
+}
+
+/* Modal — imperialna rama */
+.modal {
+  border: 1px solid rgba(226,188,89,.46);
+  box-shadow:
+    0 24px 70px rgba(0,0,0,.72),
+    0 0 25px rgba(214,173,74,.08),
+    inset 0 0 35px rgba(214,173,74,.025);
+}
+
+/* Nikitocoiny */
+.coin,
+.coin-badge,
+.coin-task-box {
+  border-color: rgba(241,217,138,.48) !important;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(79,59,18,.32),
+      rgba(16,13,7,.88)
+    ) !important;
+  box-shadow:
+    inset 0 0 18px rgba(214,173,74,.06),
+    0 4px 14px rgba(0,0,0,.18);
+}
+
+/* Priorytet pilny / elementy ostrzegawcze */
+.danger,
+.urgent {
+  border-color: rgba(137,42,48,.65);
+  box-shadow: 0 0 12px rgba(95,21,27,.13);
+}
+
+/* Delikatna złota linia na górze aplikacji */
+body::before {
+  content: "";
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      var(--imperium-gold-dark),
+      var(--imperium-gold-light),
+      var(--imperium-gold-dark),
+      transparent
+    );
+}
+
+/* Mobile — zachowujemy pełną responsywność */
+@media (max-width: 700px) {
+  .panel,
+  .hero,
+  .card,
+  .task,
+  .modal {
+    max-width: 100%;
+  }
+
+  .task::before {
+    top: 9px;
+    bottom: 9px;
+  }
+
+  button,
+  .btn {
+    min-height: 44px;
+  }
+
+  input,
+  textarea,
+  select {
+    max-width: 100%;
+  }
+}
