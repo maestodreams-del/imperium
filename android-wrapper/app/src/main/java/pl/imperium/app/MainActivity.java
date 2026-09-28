@@ -589,7 +589,30 @@ channel.enableVibration(true);
     }
 
     public class AndroidBridge {
+@JavascriptInterface
+public void checkWebUpdate(
+        int version,
+        String versionName,
+        String packageUrl,
+        String accessToken
+) {
 
+    if (version <= getInstalledWebVersion()) {
+        return;
+    }
+
+    runOnUiThread(() ->
+            Toast.makeText(
+                    MainActivity.this,
+                    "Dostępna aktualizacja IMPERIUM: "
+                            + versionName,
+                    Toast.LENGTH_SHORT
+            ).show()
+    );
+
+    // Następny krok:
+    // pobranie pakietu i instalacja aktualizacji
+}
         @JavascriptInterface
         public void notify(
                 String title,
