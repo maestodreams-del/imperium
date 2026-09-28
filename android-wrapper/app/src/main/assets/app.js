@@ -198,12 +198,15 @@ async function pgGet(query){ return cloudFetch(`/rest/v1/${query}`); }
       window.AndroidBridge &&
       typeof AndroidBridge.checkWebUpdate==='function'
     ){
-      AndroidBridge.checkWebUpdate(
-        Number(update.version),
-        String(update.version_name||''),
-        String(update.package_url||''),
-        String(state.auth.access_token||'')
-      );
+     const cfg=cloudConfig();
+
+AndroidBridge.checkWebUpdate(
+  Number(update.version),
+  String(update.version_name||''),
+  String(update.package_url||''),
+  String(state.auth.access_token||''),
+  String(cfg?.key||'')
+);
     }
 
   }catch(e){
