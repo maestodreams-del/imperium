@@ -345,55 +345,19 @@ function render(){
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
 function renderChatPage(){
   const u=currentUser();
-
-  return `
-    <section class="chat-page">
-
-      <div class="hero">
-        <div class="hero-card">
-          <div class="eyebrow">IMPERIUM COMMUNICATIONS</div>
-          <h2>💬 Czat główny</h2>
-          <p>Wspólny kanał komunikacji wszystkich pracowników IMPERIUM.</p>
-        </div>
+  return `<section class="chat-page comms-page">
+    <div class="panel chat-panel comms-panel">
+      <div class="chat-header comms-header">
+        <div class="comms-title"><div class="comms-emblem">${imperialIcon('chat')}</div><div><div class="eyebrow">SECURE COMMUNICATION CHANNEL</div><h3>IMPERIUM // GENERAL</h3></div></div>
+        <div class="comms-state"><i></i><span>ONLINE</span></div>
       </div>
-
-      <div class="panel chat-panel">
-
-        <div class="chat-header">
-          <div>
-            <div class="eyebrow">Kanał ogólny</div>
-            <h3>IMPERIUM</h3>
-          </div>
-          <span class="cloud-state">● ONLINE</span>
-        </div>
-
-        <div id="chat-messages" class="chat-messages">
-          <div class="empty">
-            Ładowanie wiadomości…
-          </div>
-        </div>
-
-        <div class="chat-compose">
-          <textarea
-            id="chat-input"
-            maxlength="2000"
-            rows="2"
-            placeholder="Napisz wiadomość, ${esc(u.name)}…"
-          ></textarea>
-
-          <button
-            class="goldbtn"
-            id="chat-send"
-            type="button"
-          >
-            Wyślij ➤
-          </button>
-        </div>
-
+      <div id="chat-messages" class="chat-messages comms-stream"><div class="empty">Synchronizacja kanału…</div></div>
+      <div class="chat-compose comms-compose">
+        <div class="comms-input-wrap"><span class="comms-prompt">›</span><textarea id="chat-input" maxlength="2000" rows="1" placeholder="Wiadomość do kanału…"></textarea></div>
+        <button class="comms-send" id="chat-send" type="button" aria-label="Wyślij"><span>WYŚLIJ</span><b>↗</b></button>
       </div>
-
-    </section>
-  `;
+    </div>
+  </section>`;
 }
   async function loadChatMessages(){
   if(state.mode!=='cloud') return;
@@ -407,24 +371,19 @@ function renderChatPage(){
       'select=id,user_id,message,created_at&order=created_at.asc&limit=200'
     );
 
+    const wasNearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<90;
     box.innerHTML=rows.length
       ? rows.map(m=>{
-          const author=getUser(m.user_id);
-          const mine=m.user_id===currentUser()?.id;
-
-          return `
-            <div class="chat-message ${mine?'mine':''}">
-              <div class="chat-message-head">
-                <b>${esc(author?.name||'Pracownik')}</b>
-                <span>${new Date(m.created_at).toLocaleString('pl-PL')}</span>
-              </div>
-              <div class="chat-message-text">${esc(m.message)}</div>
-            </div>
-          `;
+          const author=getUser(m.user_id), mine=m.user_id===currentUser()?.id;
+          const d=new Date(m.created_at);
+          return `<div class="chat-message ${mine?'mine':''}">
+            <div class="chat-avatar">${initials(author?.name||'P')}</div>
+            <div class="chat-bubble"><div class="chat-message-head"><b>${mine?'TY':esc(author?.name||'Pracownik')}</b><span>${d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})}</span></div><div class="chat-message-text">${esc(m.message)}</div></div>
+          </div>`;
         }).join('')
-      : '<div class="empty">Brak wiadomości. Rozpocznij rozmowę 👑</div>';
-
-    box.scrollTop=box.scrollHeight;
+      : '<div class="empty">Kanał jest pusty. Wyślij pierwszą wiadomość.</div>';
+    if(wasNearBottom||!box.dataset.loaded) box.scrollTop=box.scrollHeight;
+    box.dataset.loaded='1';
 
   }catch(e){
     box.innerHTML=`<div class="status-note danger-text">Błąd czatu: ${esc(e.message)}</div>`;
