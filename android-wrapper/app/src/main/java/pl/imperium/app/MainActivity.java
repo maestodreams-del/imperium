@@ -22,6 +22,8 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.widget.Toast;
 
 import java.io.OutputStream;
@@ -366,13 +368,16 @@ HttpURLConnection connection =
 private void loadImperium() {
     File updatedIndex = new File(activeWebDir, "index.html");
 
-    if (updatedIndex.exists()) {
+    web.clearCache(true);
+    web.getSettings().setCacheMode(WebSettings.LOAD_NO_CACHE);
+
+    if (updatedIndex.exists() && getInstalledWebVersion() > BUNDLED_WEB_VERSION) {
         web.loadUrl(
-                "file://" + updatedIndex.getAbsolutePath()
+                "file://" + updatedIndex.getAbsolutePath() + "?v=" + getInstalledWebVersion()
         );
     } else {
         web.loadUrl(
-                "file:///android_asset/index.html"
+                "file:///android_asset/index.html?v=" + BUNDLED_WEB_VERSION
         );
     }
 }
@@ -398,7 +403,16 @@ private void loadImperium() {
             s.setAllowUniversalAccessFromFileURLs(true);
         }
 
-        web.setWebViewClient(new WebViewClient());
+        web.clearCache(true);
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(
+                    WebView view,
+                    WebResourceRequest request
+            ) {
+                return super.shouldInterceptRequest(view, request);
+            }
+        });
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override
