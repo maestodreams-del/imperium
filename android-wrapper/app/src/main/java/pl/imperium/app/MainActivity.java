@@ -187,8 +187,37 @@ private void deleteDirectory(File file) {
 
             URL url = new URL(packageUrl);
 
-            HttpURLConnection connection =
-                    (HttpURLConnection) url.openConnection();
+// Bezpieczeństwo:
+// aktualizacje mogą być pobierane wyłącznie
+// z naszego Supabase Storage.
+if (!"https".equalsIgnoreCase(url.getProtocol())) {
+    throw new Exception(
+            "Nieprawidłowy adres aktualizacji."
+    );
+}
+
+String host = url.getHost();
+
+if (host == null ||
+        !host.endsWith(".supabase.co")) {
+    throw new Exception(
+            "Aktualizacja pochodzi z niedozwolonego serwera."
+    );
+}
+
+String path = url.getPath();
+
+if (path == null ||
+        !path.startsWith(
+                "/storage/v1/object/app-updates/"
+        )) {
+    throw new Exception(
+            "Nieprawidłowa lokalizacja pakietu aktualizacji."
+    );
+}
+
+HttpURLConnection connection =
+        (HttpURLConnection) url.openConnection();
 
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(15000);
