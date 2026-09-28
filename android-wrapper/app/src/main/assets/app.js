@@ -565,8 +565,65 @@ async function uploadFiles(taskId,files,kind){
 }
 function findAttachment(id){for(const t of state.db.tasks){for(const a of (t.attachments||[]))if(a.id===id)return a;for(const a of (t.report?.attachments||[]))if(a.id===id)return a;}return null;}
 async function openAttachment(id){
-  const a=findAttachment(id);if(!a)return;if(state.mode==='demo')return toast('W demo zapisane są tylko informacje o pliku. W chmurze plik otwiera się normalnie.');
-  try{toast('Pobieranie pliku…');const r=await cloudFetch(`/storage/v1/object/authenticated/task-files/${encodeStoragePath(a.path)}`,{raw:true});const blob=await r.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.target='_blank';link.rel='noopener';if(!/^image\//.test(a.type)&&!/^video\//.test(a.type)&&a.type!=='application/pdf')link.download=a.name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e){toast(`Nie udało się otworzyć: ${e.message}`);}
+  const a = findAttachment(id);
+  if(!a) return;
+
+  if(state.mode === 'demo'){
+    return toast('W demo zapisane są tylko informacje o pliku.');
+  }
+
+  try{
+    toast('Pobieranie pliku…');
+
+    const r = await cloudFetch(
+      `/storage/v1/object/authenticated/task-files/${encodeStoragePath(a.path)}`,
+      {raw:true}
+    );
+
+    const blob = await r.blob();
+
+    // Aplikacja Android IMPERIUM
+    if(window.AndroidBridge && typeof window.AndroidBridge.saveFile === 'function'){
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        try{
+          const base64 = String(reader.result).split(',')[1];
+
+          window.AndroidBridge.saveFile(
+            a.name || 'imperium_file',
+            a.type || 'application/octet-stream',
+            base64
+          );
+        }catch(e){
+          toast(`Błąd zapisu: ${e.message}`);
+        }
+      };
+
+      reader.onerror = () => {
+        toast('Nie udało się przygotować pliku.');
+      };
+
+      reader.readAsDataURL(blob);
+      return;
+    }
+
+    // Wersja przeglądarkowa
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = a.name || 'imperium_file';
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+  }catch(e){
+    toast(`Nie udało się pobrać: ${e.message}`);
+  }
 }
 function updateTimers(){document.querySelectorAll('[data-deadline]').forEach(el=>{if(!el.dataset.deadline)return;const ms=new Date(el.dataset.deadline)-Date.now();el.textContent=duration(ms);el.classList.toggle('over',ms<0);});}
 
