@@ -1,0 +1,70 @@
+name: Publish IMPERIUM rentals update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-rentals.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install database and archive tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client zip
+
+      - name: Migrate and allocate web update number
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL"
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f backend/rentals.sql
+          version="$(psql "$SUPABASE_DB_URL" -Atqc 'select greatest(coalesce(max(version),0)+1,2) from public.app_updates')"
+          echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Package current web interface
+        run: |
+          set -euo pipefail
+          cmp app.js android-wrapper/app/src/main/assets/app.js
+          cmp styles.css android-wrapper/app/src/main/assets/styles.css
+          mkdir -p package/icons
+          cp android-wrapper/app/src/main/assets/{index.html,app.js,styles.css,config.js,manifest.webmanifest,sw.js} package/
+          cp android-wrapper/app/src/main/assets/icons/icon.svg package/icons/
+          (cd package && zip -qr "../imperium-web-${WEB_VERSION}.zip" .)
+
+      - name: Upload web update
+        env:
+          SUPABASE_URL: https://kpqhmmietusedznadjjy.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_SECRET_KEY"
+          curl --fail-with-body -X POST \
+            "$SUPABASE_URL/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" \
+            -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
+            -H "apikey: $SUPABASE_SECRET_KEY" \
+            -H 'Content-Type: application/zip' \
+            -H 'x-upsert: true' \
+            --data-binary "@imperium-web-${WEB_VERSION}.zip"
+
+      - name: Activate automatic update
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
+            -v version="$WEB_VERSION" \
+            -v package_url="https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" <<'SQL'
+          begin;
+          update public.app_updates set active=false where active=true;
+          insert into public.app_updates(version,version_name,package_url,active)
+          values (:'version'::integer, 'Umowy najmu i korespondencja', :'package_url', true);
+          commit;
+          SQL

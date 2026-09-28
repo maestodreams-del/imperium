@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], inspections: [], inspectionId: null, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], inspections: [], rentals: [], correspondence: [], inspectionId: null, rentalId: null, rentalLocationId: null, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -59,6 +59,7 @@ function seed(){
     ],
     attendance:[],
     inspections:[],
+    rentals:[],correspondence:[],
     events:[
       {id:uid(),type:'system',text:'IMPERIUM uruchomione',userId:'u-admin',taskId:null,createdAt:new Date(t-12000000).toISOString()},
       {id:uid(),type:'claim',text:'Mikołaj przejął zadanie „Odczyt liczników”',userId:'u-mikolaj',taskId:'t2',createdAt:new Date(t-1600000).toISOString()},
@@ -74,6 +75,7 @@ function loadDemoDB(){
       x.disciplinaryRecords ||= [];
       x.coinTransactions ||= [];
       x.inspections ||= [];
+      x.rentals ||= [];x.correspondence ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
       return x;
     }
@@ -226,11 +228,12 @@ function mapTaskRow(t,comments,atts){
   return {id:t.id,title:t.title,description:t.description||'',notes:t.notes||'',sanctionType:t.sanction_type||'none',sanctionText:t.sanction_text||'',disciplinaryNote:t.disciplinary_note||'',rewardCoins:Number(t.reward_coins||0),penaltyCoins:Number(t.penalty_coins||0),locationId:t.location_id,priority:t.priority,status:t.status,durationMin:t.duration_min,createdAt:t.created_at,createdBy:t.created_by,claimedBy:t.claimed_by,claimedAt:t.claimed_at,deadlineAt:t.deadline_at,completedAt:t.completed_at,reworkCount:Number(t.rework_count||0),report:t.report_text?{text:t.report_text,submittedAt:t.report_submitted_at,attachments:reportAtts}:null,comments:comments.filter(c=>c.task_id===t.id).map(c=>({id:c.id,userId:c.author_id,text:c.body,createdAt:c.created_at})),attachments:taskAtts};
 }
 function mapAtt(a){return {id:a.id,name:a.file_name,size:Number(a.size_bytes||0),type:a.mime_type||'application/octet-stream',path:a.storage_path,kind:a.kind,uploadedBy:a.uploaded_by,createdAt:a.created_at};}
+function mapRental(r){return {id:r.id,locationId:r.location_id,contractor:r.contractor,nip:r.nip||'',contactPerson:r.contact_person||'',phone:r.phone||'',email:r.email||'',startsOn:r.starts_on,endsOn:r.ends_on,indefinite:r.indefinite,areaSqm:Number(r.area_sqm),priceSqmNet:Number(r.price_sqm_net),priceSqmGross:Number(r.price_sqm_gross),parkingNet:Number(r.parking_net),parkingGross:Number(r.parking_gross),internetNet:Number(r.internet_net),internetGross:Number(r.internet_gross)};}
 async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,correspondence]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -241,10 +244,14 @@ async function loadCloudDB({silent=false}={}){
       pgGet('disciplinary_records?select=*&order=created_at.desc'),
       pgGet('coin_transactions?select=*&order=created_at.desc'),
       pgGet('work_attendance?select=*&order=started_at.desc&limit=500').catch(()=>[]),
-      pgGet('inspections?select=*&order=valid_until.asc')
+      pgGet('inspections?select=*&order=valid_until.asc'),
+      pgGet('rental_agreements?select=*&order=created_at.desc'),
+      pgGet('rental_correspondence?select=*&order=occurred_at.desc')
     ]);
     state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at}));
     state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
+    state.rentals=(rentals||[]).map(mapRental);
+    state.correspondence=(correspondence||[]).map(m=>({id:m.id,locationId:m.location_id,rentalId:m.rental_id,kind:m.kind,subject:m.subject,body:m.body,occurredAt:m.occurred_at,createdBy:m.created_by}));
     state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
@@ -310,6 +317,7 @@ function imperialIcon(id){
     tasks:'<svg viewBox="0 0 24 24"><path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5"/></svg>',
     locations:'<svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
     inspections:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="1"/><path d="M8 3v4M16 3v4M8 11h8M8 15h5"/></svg>',
+    rentals:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/><path d="M16 17h2"/></svg>',
     activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
     chat:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h6"/></svg>',
@@ -336,15 +344,16 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
-  if(state.mode==='demo') state.inspections=state.db.inspections||[];
+  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.correspondence=state.db.correspondence||[];}
+  if(!isAdmin()&&state.tab==='rentals')state.tab='tasks';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app aureus-shell">
   <header class="topbar"><div class="topbar-inner">
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${u.role==='admin'?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${isAdmin()?nav('rentals','Najem'):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   bind();
 }
@@ -480,6 +489,26 @@ function renderInspectionsPage(){
   <div class="inspection-summary"><div><b>${sorted.length}</b><span>Pozycji</span></div><div class="inspection-expired"><b>${expired}</b><span>Po terminie</span></div><div class="inspection-soon"><b>${soon}</b><span>Do 30 dni</span></div></div>
   <div class="inspection-list">${sorted.map(i=>{const c=inspectionCountdown(i.validUntil);return `<article class="inspection-card ${c.status}"><div class="inspection-head"><div><small>${esc(getLoc(i.locationId)?.name||'Obiekt')}</small><h3>${esc(i.name)}</h3></div><span class="inspection-badge">${c.status==='expired'?'PO TERMINIE':c.status==='soon'?'WKRÓTCE':'WAŻNY'}</span></div><div class="inspection-dates"><span>Ważny do: <b>${esc(i.validUntil)}</b></span>${i.lastInspected?`<span>Ostatni przegląd: ${esc(i.lastInspected)}</span>`:''}</div>${i.notes?`<p>${esc(i.notes)}</p>`:''}<div class="inspection-foot"><strong data-inspection-until="${esc(i.validUntil)}">${c.text}</strong>${isAdmin()?`<button class="smallbtn" data-edit-inspection="${esc(i.id)}">Edytuj</button>`:''}</div></article>`}).join('')||'<div class="empty">Brak wpisów. Dodaj np. przegląd kominiarski, gaśnic lub pięcioletni.</div>'}</div>`;
 }
+const rentMoney=n=>new Intl.NumberFormat('pl-PL',{style:'currency',currency:'PLN'}).format(Number(n)||0);
+function rentalTotals(r){return {net:r.areaSqm*r.priceSqmNet+r.parkingNet+r.internetNet,gross:r.areaSqm*r.priceSqmGross+r.parkingGross+r.internetGross};}
+function renderRentalsPage(){
+  if(!isAdmin())return '';
+  const locs=state.db.locations;
+  const locId=locs.some(l=>l.id===state.rentalLocationId)?state.rentalLocationId:locs[0]?.id;
+  state.rentalLocationId=locId;
+  const rentals=state.rentals.filter(r=>r.locationId===locId);
+  const messages=state.correspondence.filter(m=>m.locationId===locId);
+  return `<div class="toolbar"><div><div class="eyebrow">Ewidencja najmu</div><h2 class="section-title">Umowy najmu i korespondencja</h2></div><button class="goldbtn" id="add-rental" ${locId?'':'disabled'}>+ Umowa najmu</button></div>
+  <div class="rental-location-tabs">${locs.map(l=>`<button class="chip ${l.id===locId?'active':''}" data-rental-location="${esc(l.id)}">${esc(l.name)}</button>`).join('')}</div>
+  <div class="subheading">Umowy — ${esc(getLoc(locId)?.name||'wybierz obiekt')}</div>
+  <div class="rental-list">${rentals.map(r=>{const total=rentalTotals(r);return `<article class="rental-card"><div class="rental-head"><div><h3>${esc(r.contractor)}</h3><small>NIP: ${esc(r.nip||'—')} • ${esc(r.contactPerson||'Brak osoby kontaktowej')}</small></div><button class="smallbtn" data-edit-rental="${esc(r.id)}">Edytuj</button></div>
+  <div class="rental-meta"><span>Od ${esc(r.startsOn)}</span><span>${r.indefinite?'Na czas nieokreślony':`Do ${esc(r.endsOn||'—')}`}</span><span>${esc(r.areaSqm)} m²</span></div>
+  <div class="rental-prices"><div><small>Czynsz za m²</small><b>${rentMoney(r.priceSqmNet)} netto</b><span>${rentMoney(r.priceSqmGross)} brutto</span></div><div><small>Parking</small><b>${rentMoney(r.parkingNet)} netto</b><span>${rentMoney(r.parkingGross)} brutto</span></div><div><small>Internet</small><b>${rentMoney(r.internetNet)} netto</b><span>${rentMoney(r.internetGross)} brutto</span></div></div>
+  <div class="rental-total"><span>Miesięcznie łącznie</span><strong>${rentMoney(total.net)} netto<br>${rentMoney(total.gross)} brutto</strong></div>
+  <div class="rental-contact">${r.phone?`<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:''}</div></article>`}).join('')||'<div class="empty">Brak umów dla tego obiektu.</div>'}</div>
+  <div class="toolbar"><div><div class="eyebrow">Historia kontaktu</div><h3 class="section-title">Korespondencja obiektu</h3></div><button class="ghost" id="add-rental-message" ${locId?'':'disabled'}>+ Wpis</button></div>
+  <div class="rental-messages">${messages.map(m=>`<article class="rental-message"><div><b>${esc(m.subject)}</b><small>${m.kind==='incoming'?'Otrzymana':m.kind==='outgoing'?'Wysłana':'Notatka'} • ${fmtDate(m.occurredAt)}${m.rentalId?` • ${esc(state.rentals.find(r=>r.id===m.rentalId)?.contractor||'')}`:''}</small></div><p>${esc(m.body)}</p><button class="smallbtn" data-delete-rental-message="${esc(m.id)}">Usuń</button></article>`).join('')||'<div class="empty">Brak korespondencji dla tego obiektu.</div>'}</div>`;
+}
 function renderLocationsPage(){
   const visible=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
   return `<div class="toolbar"><div><div class="eyebrow">Struktura</div><h2 class="section-title">Obiekty / lokalizacje</h2></div>${isAdmin()?'<button class="goldbtn" id="add-location">+ Obiekt</button>':''}</div><div class="list">${visible.map(l=>{const count=state.db.tasks.filter(t=>t.locationId===l.id&&t.status!=='done').length;return `<div class="row"><div class="row-left"><div class="avatar">${initials(l.name)}</div><div class="row-main"><b>${esc(l.name)}</b><small>${esc([l.city,l.address].filter(Boolean).join(' • ')||'Brak adresu')}</small>${l.description?`<div class="subtle">${esc(l.description)}</div>`:''}</div></div><div class="row-actions"><span class="badge">${count} aktywne</span>${isAdmin()?`<button class="smallbtn" data-edit-location="${l.id}">Edytuj</button>`:''}</div></div>`}).join('')||'<div class="empty">Brak obiektów.</div>'}</div>`;
@@ -579,6 +608,20 @@ function renderModal(){
   if(state.modal==='addDiscipline')return renderDisciplineModal();
   if(state.modal==='coinAdjust')return renderCoinModal();
   const close='<button class="ghost" data-close>Anuluj</button>';
+  if(state.modal==='newRental'||state.modal==='editRental'){
+    const edit=state.modal==='editRental',r=edit?state.rentals.find(x=>x.id===state.rentalId):null;
+    if(edit&&!r)return '';
+    return `<div class="modal-bg"><div class="modal rental-modal"><h2>${edit?'Edytuj umowę najmu':'Nowa umowa najmu'}</h2>
+    <div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-rental-location">${state.db.locations.map(l=>`<option value="${esc(l.id)}" ${l.id===(r?.locationId||state.rentalLocationId)?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Nazwa kontrahenta / najemcy</label><input id="f-rental-contractor" maxlength="160" value="${esc(r?.contractor||'')}" required></div><div class="field"><label>NIP</label><input id="f-rental-nip" maxlength="24" value="${esc(r?.nip||'')}"></div><div class="field"><label>Osoba kontaktowa</label><input id="f-rental-contact" maxlength="120" value="${esc(r?.contactPerson||'')}"></div><div class="field"><label>Telefon</label><input id="f-rental-phone" type="tel" maxlength="50" value="${esc(r?.phone||'')}"></div><div class="field"><label>E-mail</label><input id="f-rental-email" type="email" maxlength="254" value="${esc(r?.email||'')}"></div><div class="field"><label>Początek umowy</label><input id="f-rental-start" type="date" value="${esc(r?.startsOn||'')}"></div><div class="field"><label>Koniec umowy</label><input id="f-rental-end" type="date" value="${esc(r?.endsOn||'')}" ${r?.indefinite?'disabled':''}></div></div>
+    <label class="checkrow"><input id="f-rental-indefinite" type="checkbox" ${r?.indefinite?'checked':''}> Umowa na czas nieokreślony</label>
+    <div class="rental-form-section">Powierzchnia i czynsz miesięczny</div><div class="formgrid"><div class="field"><label>Powierzchnia (m²)</label><input id="f-rental-area" type="number" min="0.01" step="0.01" value="${r?.areaSqm||''}"></div><div class="field"><label>Cena za m² netto (zł)</label><input id="f-rental-sqm-net" type="number" min="0" step="0.01" value="${r?.priceSqmNet??''}"></div><div class="field"><label>Cena za m² brutto (zł)</label><input id="f-rental-sqm-gross" type="number" min="0" step="0.01" value="${r?.priceSqmGross??''}"></div></div>
+    <div class="rental-form-section">Dodatki miesięczne</div><div class="formgrid"><div class="field"><label>Parking netto (zł)</label><input id="f-rental-parking-net" type="number" min="0" step="0.01" value="${r?.parkingNet??0}"></div><div class="field"><label>Parking brutto (zł)</label><input id="f-rental-parking-gross" type="number" min="0" step="0.01" value="${r?.parkingGross??0}"></div><div class="field"><label>Internet netto (zł)</label><input id="f-rental-internet-net" type="number" min="0" step="0.01" value="${r?.internetNet??0}"></div><div class="field"><label>Internet brutto (zł)</label><input id="f-rental-internet-gross" type="number" min="0" step="0.01" value="${r?.internetGross??0}"></div></div>
+    <div class="rental-live-total" id="rental-live-total"></div><div class="modal-actions">${edit?'<button class="dangerbtn" id="delete-rental">Usuń umowę</button>':''}${close}<button class="goldbtn" id="save-rental">Zapisz</button></div></div></div>`;
+  }
+  if(state.modal==='newRentalMessage'){
+    const rentals=state.rentals.filter(r=>r.locationId===state.rentalLocationId);
+    return `<div class="modal-bg"><div class="modal"><h2>Wpis korespondencji</h2><div class="modal-sub">${esc(getLoc(state.rentalLocationId)?.name||'Obiekt')}</div><div class="formgrid"><div class="field"><label>Rodzaj</label><select id="f-message-kind"><option value="incoming">Otrzymana</option><option value="outgoing">Wysłana</option><option value="note">Notatka</option></select></div><div class="field"><label>Data i godzina</label><input id="f-message-date" type="datetime-local" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16)}"></div></div><div class="field"><label>Powiązana umowa (opcjonalnie)</label><select id="f-message-rental"><option value="">Cały obiekt</option>${rentals.map(r=>`<option value="${esc(r.id)}">${esc(r.contractor)}</option>`).join('')}</select></div><div class="field"><label>Temat</label><input id="f-message-subject" maxlength="160" placeholder="Np. Przypomnienie o płatności"></div><div class="field"><label>Treść / ustalenia</label><textarea id="f-message-body" maxlength="10000"></textarea></div><div class="modal-actions">${close}<button class="goldbtn" id="save-rental-message">Zapisz wpis</button></div></div></div>`;
+  }
   if(state.modal==='newInspection'||state.modal==='editInspection'){
     const edit=state.modal==='editInspection',i=edit?(state.inspections||[]).find(x=>x.id===state.inspectionId):null;
     if(edit&&!i)return '';
@@ -652,6 +695,17 @@ setTimeout(()=>{
   document.getElementById('new-task')?.addEventListener('click',()=>{selectedFiles=[];state.modal='newTask';render();});
   document.getElementById('add-location')?.addEventListener('click',()=>{state.modal='newLocation';render();});
   document.getElementById('add-inspection')?.addEventListener('click',()=>{state.inspectionId=null;state.modal='newInspection';render();});
+  document.querySelectorAll('[data-rental-location]').forEach(b=>b.onclick=()=>{state.rentalLocationId=b.dataset.rentalLocation;render();});
+  document.getElementById('add-rental')?.addEventListener('click',()=>{state.rentalId=null;state.modal='newRental';render();});
+  document.querySelectorAll('[data-edit-rental]').forEach(b=>b.onclick=()=>{state.rentalId=b.dataset.editRental;state.modal='editRental';render();});
+  document.getElementById('add-rental-message')?.addEventListener('click',()=>{state.modal='newRentalMessage';render();});
+  document.querySelectorAll('[data-delete-rental-message]').forEach(b=>b.onclick=()=>deleteRentalMessage(b.dataset.deleteRentalMessage));
+  document.getElementById('save-rental')?.addEventListener('click',saveRental);
+  document.getElementById('delete-rental')?.addEventListener('click',deleteRental);
+  document.getElementById('save-rental-message')?.addEventListener('click',saveRentalMessage);
+  document.getElementById('f-rental-indefinite')?.addEventListener('change',e=>{document.getElementById('f-rental-end').disabled=e.target.checked;if(e.target.checked)document.getElementById('f-rental-end').value='';});
+  document.querySelectorAll('.rental-modal input').forEach(el=>el.addEventListener('input',updateRentalFormTotal));
+  updateRentalFormTotal();
   document.querySelectorAll('[data-edit-inspection]').forEach(b=>b.onclick=()=>{state.inspectionId=b.dataset.editInspection;state.modal='editInspection';render();});
   document.getElementById('save-inspection')?.addEventListener('click',saveInspection);
   document.getElementById('delete-inspection')?.addEventListener('click',deleteInspection);
@@ -774,6 +828,67 @@ async function failTask(){
 async function resetTask(){
   const t=state.db.tasks.find(x=>x.id===state.taskId);if(!confirm('Zwolnić wykonawcę i ustawić zadanie jako nowe?'))return;
   await withAction('Resetowanie zadania…',async()=>{if(state.mode==='demo'){Object.assign(t,{status:'open',claimedBy:null,claimedAt:null,deadlineAt:null,completedAt:null,report:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);saveDemoDB();}else{await pgPatch('tasks',`id=eq.${t.id}`,{status:'open',claimed_by:null,claimed_at:null,deadline_at:null,report_text:null,report_submitted_at:null,completed_at:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);await loadCloudDB({silent:true});}state.modal='detail';});
+}
+function rentalNumber(id){return Number(document.getElementById(id)?.value||0);}
+function updateRentalFormTotal(){
+  const box=document.getElementById('rental-live-total');if(!box)return;
+  const area=rentalNumber('f-rental-area');
+  const net=area*rentalNumber('f-rental-sqm-net')+rentalNumber('f-rental-parking-net')+rentalNumber('f-rental-internet-net');
+  const gross=area*rentalNumber('f-rental-sqm-gross')+rentalNumber('f-rental-parking-gross')+rentalNumber('f-rental-internet-gross');
+  box.innerHTML=`Suma miesięczna: <b>${rentMoney(net)} netto</b> / <b>${rentMoney(gross)} brutto</b>`;
+}
+async function saveRental(){
+  if(!isAdmin())return;
+  const value={locationId:document.getElementById('f-rental-location').value,contractor:document.getElementById('f-rental-contractor').value.trim(),nip:document.getElementById('f-rental-nip').value.trim(),contactPerson:document.getElementById('f-rental-contact').value.trim(),phone:document.getElementById('f-rental-phone').value.trim(),email:document.getElementById('f-rental-email').value.trim(),startsOn:document.getElementById('f-rental-start').value,indefinite:document.getElementById('f-rental-indefinite').checked,endsOn:document.getElementById('f-rental-end').value||null,areaSqm:rentalNumber('f-rental-area'),priceSqmNet:rentalNumber('f-rental-sqm-net'),priceSqmGross:rentalNumber('f-rental-sqm-gross'),parkingNet:rentalNumber('f-rental-parking-net'),parkingGross:rentalNumber('f-rental-parking-gross'),internetNet:rentalNumber('f-rental-internet-net'),internetGross:rentalNumber('f-rental-internet-gross')};
+  if(!value.contractor||!value.locationId||!value.startsOn||value.areaSqm<=0)return toast('Wpisz kontrahenta, obiekt, początek umowy i powierzchnię.');
+  if(!value.indefinite&&!value.endsOn)return toast('Wybierz koniec umowy albo czas nieokreślony.');
+  if(value.indefinite)value.endsOn=null;
+  if(value.endsOn&&value.endsOn<value.startsOn)return toast('Koniec umowy nie może poprzedzać początku.');
+  if(value.email&&!document.getElementById('f-rental-email').checkValidity())return toast('Sprawdź adres e-mail.');
+  const required=['f-rental-sqm-net','f-rental-sqm-gross'];if(required.some(id=>document.getElementById(id).value===''))return toast('Wpisz cenę netto i brutto za m².');
+  const nums=[value.areaSqm,value.priceSqmNet,value.priceSqmGross,value.parkingNet,value.parkingGross,value.internetNet,value.internetGross];
+  if(nums.some(n=>!Number.isFinite(n)||n<0))return toast('Ceny i powierzchnia muszą być poprawnymi liczbami.');
+  const edit=state.modal==='editRental',id=state.rentalId;
+  await withAction('Zapisywanie umowy…',async()=>{
+    if(state.mode==='demo'){
+      state.db.rentals ||= [];
+      if(edit)Object.assign(state.db.rentals.find(r=>r.id===id),value);else state.db.rentals.push({id:uid(),...value});
+      saveDemoDB();state.rentals=state.db.rentals;
+    }else{
+      const row={location_id:value.locationId,contractor:value.contractor,nip:value.nip,contact_person:value.contactPerson,phone:value.phone,email:value.email,starts_on:value.startsOn,ends_on:value.endsOn,indefinite:value.indefinite,area_sqm:value.areaSqm,price_sqm_net:value.priceSqmNet,price_sqm_gross:value.priceSqmGross,parking_net:value.parkingNet,parking_gross:value.parkingGross,internet_net:value.internetNet,internet_gross:value.internetGross};
+      if(edit)await pgPatch('rental_agreements',`id=eq.${encodeURIComponent(id)}`,row);else await pgPost('rental_agreements',row);
+      await loadCloudDB({silent:true});
+    }
+    state.rentalLocationId=value.locationId;state.rentalId=null;state.modal=null;
+  });
+}
+async function deleteRental(){
+  if(!isAdmin()||!state.rentalId||!confirm('Usunąć umowę? Wpisy korespondencji obiektu pozostaną.'))return;
+  const id=state.rentalId;
+  await withAction('Usuwanie umowy…',async()=>{
+    if(state.mode==='demo'){state.db.rentals=state.db.rentals.filter(r=>r.id!==id);state.db.correspondence.forEach(m=>{if(m.rentalId===id)m.rentalId=null;});saveDemoDB();state.rentals=state.db.rentals;state.correspondence=state.db.correspondence;}
+    else{await pgDelete('rental_agreements',`id=eq.${encodeURIComponent(id)}`);await loadCloudDB({silent:true});}
+    state.rentalId=null;state.modal=null;
+  });
+}
+async function saveRentalMessage(){
+  if(!isAdmin())return;
+  const locationId=state.rentalLocationId,rentalId=document.getElementById('f-message-rental').value||null,kind=document.getElementById('f-message-kind').value,subject=document.getElementById('f-message-subject').value.trim(),body=document.getElementById('f-message-body').value.trim(),date=document.getElementById('f-message-date').value;
+  if(!locationId||!subject||!body||!date)return toast('Wpisz datę, temat i treść.');
+  if(rentalId&&!state.rentals.some(r=>r.id===rentalId&&r.locationId===locationId))return toast('Umowa nie należy do wybranego obiektu.');
+  const occurredAt=new Date(date).toISOString();
+  await withAction('Zapisywanie korespondencji…',async()=>{
+    if(state.mode==='demo'){state.db.correspondence ||= [];state.db.correspondence.unshift({id:uid(),locationId,rentalId,kind,subject,body,occurredAt,createdBy:currentUser().id});saveDemoDB();state.correspondence=state.db.correspondence;}
+    else{await pgPost('rental_correspondence',{location_id:locationId,rental_id:rentalId,kind,subject,body,occurred_at:occurredAt,created_by:currentUser().id});await loadCloudDB({silent:true});}
+    state.modal=null;
+  });
+}
+async function deleteRentalMessage(id){
+  if(!isAdmin()||!confirm('Usunąć ten wpis korespondencji?'))return;
+  await withAction('Usuwanie wpisu…',async()=>{
+    if(state.mode==='demo'){state.db.correspondence=state.db.correspondence.filter(m=>m.id!==id);saveDemoDB();state.correspondence=state.db.correspondence;}
+    else{await pgDelete('rental_correspondence',`id=eq.${encodeURIComponent(id)}`);await loadCloudDB({silent:true});}
+  });
 }
 async function saveInspection(){
   if(!isAdmin())return;
