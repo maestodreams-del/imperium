@@ -1124,3 +1124,19 @@ td {
   background-attachment:local;
 }
 .chat-message{position:relative;z-index:1;backdrop-filter:blur(2px)}
+
+
+/* IMPERIUM chat mobile fix — composer must stay visible */
+.chat-page{padding-bottom:calc(92px + env(safe-area-inset-bottom,0px))}
+.chat-panel{display:flex;flex-direction:column;min-height:0}
+.chat-messages{flex:1 1 auto;height:auto;min-height:220px;max-height:calc(100dvh - 390px)}
+.chat-compose{position:sticky;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:30;flex:0 0 auto}
+@media(max-width:700px){
+  .chat-page .hero{display:none}
+  .chat-panel{margin-top:0;min-height:calc(100dvh - 150px)}
+  .chat-header{flex:0 0 auto}
+  .chat-messages{height:auto;min-height:180px;max-height:none;flex:1 1 auto}
+  .chat-compose{grid-template-columns:minmax(0,1fr) auto;align-items:end;padding:8px 10px}
+  .chat-compose textarea{min-height:46px;max-height:100px;resize:none}
+  .chat-compose button{width:auto;min-width:88px;min-height:46px}
+}
