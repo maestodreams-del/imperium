@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], inspections: [], inspectionId: null, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -58,6 +58,7 @@ function seed(){
       {id:'c-demo-2',userId:'u-zenon',taskId:null,kind:'adjustment',amount:60,description:'Premia za wzorową pracę',createdBy:'u-admin',createdAt:new Date(t-3000000).toISOString()}
     ],
     attendance:[],
+    inspections:[],
     events:[
       {id:uid(),type:'system',text:'IMPERIUM uruchomione',userId:'u-admin',taskId:null,createdAt:new Date(t-12000000).toISOString()},
       {id:uid(),type:'claim',text:'Mikołaj przejął zadanie „Odczyt liczników”',userId:'u-mikolaj',taskId:'t2',createdAt:new Date(t-1600000).toISOString()},
@@ -72,6 +73,7 @@ function loadDemoDB(){
     if(x?.version===2){
       x.disciplinaryRecords ||= [];
       x.coinTransactions ||= [];
+      x.inspections ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
       return x;
     }
@@ -228,7 +230,7 @@ async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -238,9 +240,11 @@ async function loadCloudDB({silent=false}={}){
       pgGet('events?select=*&order=created_at.desc&limit=100'),
       pgGet('disciplinary_records?select=*&order=created_at.desc'),
       pgGet('coin_transactions?select=*&order=created_at.desc'),
-      pgGet('work_attendance?select=*&order=started_at.desc&limit=500').catch(()=>[])
+      pgGet('work_attendance?select=*&order=started_at.desc&limit=500').catch(()=>[]),
+      pgGet('inspections?select=*&order=valid_until.asc')
     ]);
     state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at}));
+    state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
     state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
@@ -305,6 +309,7 @@ function imperialIcon(id){
   const p={
     tasks:'<svg viewBox="0 0 24 24"><path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5"/></svg>',
     locations:'<svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
+    inspections:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="1"/><path d="M8 3v4M16 3v4M8 11h8M8 15h5"/></svg>',
     activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
     chat:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h6"/></svg>',
@@ -331,14 +336,15 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
+  if(state.mode==='demo') state.inspections=state.db.inspections||[];
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app aureus-shell">
   <header class="topbar"><div class="topbar-inner">
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${u.role==='admin'?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   bind();
 }
@@ -458,6 +464,22 @@ function taskCard(t,u){
     </div>
   </article>`;
 }
+function inspectionDeadline(date){ return new Date(`${date}T23:59:59.999`).getTime(); }
+function inspectionCountdown(date){
+  const ms=inspectionDeadline(date)-Date.now();
+  if(ms<0) return {text:`Po terminie ${Math.ceil(-ms/86400000)} dni`,status:'expired'};
+  const days=Math.floor(ms/86400000),hours=Math.floor(ms%86400000/3600000);
+  return {text:`${days} dni ${hours} godz.`,status:days<30?'soon':'valid'};
+}
+function renderInspectionsPage(){
+  const u=currentUser(),visible=(state.inspections||[]).filter(i=>u.role==='admin'||u.locationIds.includes(i.locationId));
+  const sorted=[...visible].sort((a,b)=>a.validUntil.localeCompare(b.validUntil));
+  const expired=sorted.filter(i=>inspectionCountdown(i.validUntil).status==='expired').length;
+  const soon=sorted.filter(i=>inspectionCountdown(i.validUntil).status==='soon').length;
+  return `<div class="toolbar"><div><div class="eyebrow">Kontrola terminów</div><h2 class="section-title">Przeglądy techniczne</h2></div>${isAdmin()?'<button class="goldbtn" id="add-inspection">+ Dodaj przegląd</button>':''}</div>
+  <div class="inspection-summary"><div><b>${sorted.length}</b><span>Pozycji</span></div><div class="inspection-expired"><b>${expired}</b><span>Po terminie</span></div><div class="inspection-soon"><b>${soon}</b><span>Do 30 dni</span></div></div>
+  <div class="inspection-list">${sorted.map(i=>{const c=inspectionCountdown(i.validUntil);return `<article class="inspection-card ${c.status}"><div class="inspection-head"><div><small>${esc(getLoc(i.locationId)?.name||'Obiekt')}</small><h3>${esc(i.name)}</h3></div><span class="inspection-badge">${c.status==='expired'?'PO TERMINIE':c.status==='soon'?'WKRÓTCE':'WAŻNY'}</span></div><div class="inspection-dates"><span>Ważny do: <b>${esc(i.validUntil)}</b></span>${i.lastInspected?`<span>Ostatni przegląd: ${esc(i.lastInspected)}</span>`:''}</div>${i.notes?`<p>${esc(i.notes)}</p>`:''}<div class="inspection-foot"><strong data-inspection-until="${esc(i.validUntil)}">${c.text}</strong>${isAdmin()?`<button class="smallbtn" data-edit-inspection="${esc(i.id)}">Edytuj</button>`:''}</div></article>`}).join('')||'<div class="empty">Brak wpisów. Dodaj np. przegląd kominiarski, gaśnic lub pięcioletni.</div>'}</div>`;
+}
 function renderLocationsPage(){
   const visible=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
   return `<div class="toolbar"><div><div class="eyebrow">Struktura</div><h2 class="section-title">Obiekty / lokalizacje</h2></div>${isAdmin()?'<button class="goldbtn" id="add-location">+ Obiekt</button>':''}</div><div class="list">${visible.map(l=>{const count=state.db.tasks.filter(t=>t.locationId===l.id&&t.status!=='done').length;return `<div class="row"><div class="row-left"><div class="avatar">${initials(l.name)}</div><div class="row-main"><b>${esc(l.name)}</b><small>${esc([l.city,l.address].filter(Boolean).join(' • ')||'Brak adresu')}</small>${l.description?`<div class="subtle">${esc(l.description)}</div>`:''}</div></div><div class="row-actions"><span class="badge">${count} aktywne</span>${isAdmin()?`<button class="smallbtn" data-edit-location="${l.id}">Edytuj</button>`:''}</div></div>`}).join('')||'<div class="empty">Brak obiektów.</div>'}</div>`;
@@ -557,6 +579,11 @@ function renderModal(){
   if(state.modal==='addDiscipline')return renderDisciplineModal();
   if(state.modal==='coinAdjust')return renderCoinModal();
   const close='<button class="ghost" data-close>Anuluj</button>';
+  if(state.modal==='newInspection'||state.modal==='editInspection'){
+    const edit=state.modal==='editInspection',i=edit?(state.inspections||[]).find(x=>x.id===state.inspectionId):null;
+    if(edit&&!i)return '';
+    return `<div class="modal-bg"><div class="modal"><h2>${edit?'Edytuj przegląd':'Nowy przegląd'}</h2><div class="field"><label>Nazwa przeglądu</label><input id="f-inspection-name" maxlength="120" value="${esc(i?.name||'')}" placeholder="Np. przegląd kominiarski, gaśnic, pięcioletni"></div><div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-inspection-location">${state.db.locations.map(l=>`<option value="${esc(l.id)}" ${l.id===i?.locationId?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Ważny do</label><input id="f-inspection-until" type="date" value="${esc(i?.validUntil||'')}"></div><div class="field"><label>Data ostatniego przeglądu (opcjonalnie)</label><input id="f-inspection-last" type="date" value="${esc(i?.lastInspected||'')}"></div></div><div class="field"><label>Uwagi (opcjonalnie)</label><textarea id="f-inspection-notes" maxlength="1000" placeholder="Np. numer protokołu, zakres kontroli">${esc(i?.notes||'')}</textarea></div><div class="modal-actions">${edit?'<button class="dangerbtn" id="delete-inspection">Usuń</button>':''}${close}<button class="goldbtn" id="save-inspection">${edit?'Zapisz':'Dodaj'}</button></div></div></div>`;
+  }
   if(state.modal==='newTask'||state.modal==='editTask'){
     const edit=state.modal==='editTask',t=edit?state.db.tasks.find(x=>x.id===state.taskId):null;
     return `<div class="modal-bg"><div class="modal"><h2>${edit?'Edytuj zadanie':'Nowe zadanie'}</h2><div class="modal-sub">${edit?'Możesz zmienić treść, obiekt, priorytet, czas oraz dodać nowe pliki.':'Utwórz zadanie i opcjonalnie dołącz dokumentację.'}</div><div class="field"><label>Tytuł</label><input id="f-title" maxlength="120" value="${esc(t?.title||'')}" placeholder="Np. Sprawdzić ogrzewanie"></div><div class="field"><label>Opis</label><textarea id="f-desc" placeholder="Co dokładnie trzeba zrobić?">${esc(t?.description||'')}</textarea></div><div class="field"><label>Uwagi i wymagania</label><textarea id="f-notes" placeholder="Np. wymagane zdjęcie przed i po, kolejność prac, dodatkowe warunki…">${esc(t?.notes||'')}</textarea></div><div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-loc">${state.db.locations.filter(l=>l.active||l.id===t?.locationId).map(l=>`<option value="${l.id}" ${l.id===t?.locationId?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Przypisz pracownika</label><select id="f-assignee"><option value="">Nieprzydzielone — pracownik może przejąć</option>${state.db.users.filter(u=>u.role==='worker'&&u.active!==false).map(u=>`<option value="${u.id}" ${t?.claimedBy===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></div><div class="field"><label>Priorytet</label><select id="f-priority"><option value="normal" ${t?.priority==='normal'?'selected':''}>Normalne</option><option value="high" ${t?.priority==='high'?'selected':''}>Wysoki</option><option value="urgent" ${t?.priority==='urgent'?'selected':''}>Pilne</option></select></div></div><div class="field"><label>Czas na wykonanie (minuty)</label><input id="f-duration" type="number" min="5" max="10080" value="${t?.durationMin||60}"></div><div class="coin-task-box"><div class="subheading">🪙 Imperatorskie Nikitocoiny</div><div class="formgrid"><div class="field"><label>Nagroda za wykonanie</label><input id="f-reward-coins" type="number" min="0" max="100000" value="${t?.rewardCoins||0}" placeholder="Np. 50"></div><div class="field"><label>Odjęcie za niewykonanie</label><input id="f-penalty-coins" type="number" min="0" max="100000" value="${t?.penaltyCoins||0}" placeholder="Np. 25"></div></div><small class="subtle">Nagroda jest naliczana po akceptacji zadania. Odjęcie następuje dopiero po decyzji administratora „Niewykonane”.</small></div><div class="formgrid"><div class="field"><label>Rodzaj sankcji za niewykonanie / opóźnienie</label><select id="f-sanction-type"><option value="none" ${!t?.sanctionType||t?.sanctionType==='none'?'selected':''}>Brak</option><option value="note" ${t?.sanctionType==='note'?'selected':''}>Uwaga</option><option value="warning" ${t?.sanctionType==='warning'?'selected':''}>Ostrzeżenie</option><option value="reprimand" ${t?.sanctionType==='reprimand'?'selected':''}>Upomnienie</option><option value="other" ${t?.sanctionType==='other'?'selected':''}>Inna</option></select></div><div class="field"><label>Opis sankcji / konsekwencji</label><input id="f-sanction-text" maxlength="300" value="${esc(t?.sanctionText||'')}" placeholder="Np. obowiązek złożenia wyjaśnienia"></div></div><div class="field"><label>Adnotacja administratora / uwaga służbowa</label><textarea id="f-disciplinary" placeholder="Np. powód niewykonania, ustalenia po terminie, uwaga do pracownika…">${esc(t?.disciplinaryNote||'')}</textarea></div><div class="status-note">Sankcja jest informacją przypisaną do zadania. IMPERIUM nie potrąca automatycznie wynagrodzenia ani nie nakłada kar finansowych.</div><div class="field"><label>Dodaj zdjęcia, wideo lub dokumenty</label><button class="ghost" id="pick-files">+ Wybierz pliki</button><div class="attachments" id="file-list"></div><small class="subtle">Limit ${BASE_CFG.MAX_ATTACHMENT_MB||50} MB na plik.</small></div>${edit&&t?.status!=='open'?'<div class="status-note">Zmiana czasu bazowego nie zeruje bieżącego odliczania. Termin możesz przedłużyć osobno w szczegółach.</div>':''}<div class="modal-actions">${edit?'<button class="dangerbtn" id="delete-task">Usuń</button>':''}${close}<button class="goldbtn" id="save-task">${edit?'Zapisz zmiany':'Utwórz zadanie'}</button></div></div></div>`;
@@ -624,6 +651,10 @@ setTimeout(()=>{
   document.getElementById('logout')?.addEventListener('click',()=>state.mode==='cloud'?signOutCloud():demoLogout());
   document.getElementById('new-task')?.addEventListener('click',()=>{selectedFiles=[];state.modal='newTask';render();});
   document.getElementById('add-location')?.addEventListener('click',()=>{state.modal='newLocation';render();});
+  document.getElementById('add-inspection')?.addEventListener('click',()=>{state.inspectionId=null;state.modal='newInspection';render();});
+  document.querySelectorAll('[data-edit-inspection]').forEach(b=>b.onclick=()=>{state.inspectionId=b.dataset.editInspection;state.modal='editInspection';render();});
+  document.getElementById('save-inspection')?.addEventListener('click',saveInspection);
+  document.getElementById('delete-inspection')?.addEventListener('click',deleteInspection);
   document.getElementById('add-user')?.addEventListener('click',()=>{state.modal='newUser';render();});
   document.querySelectorAll('[data-edit-location]').forEach(b=>b.onclick=()=>{state.locationId=b.dataset.editLocation;state.modal='editLocation';render();});
   document.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>{state.userId=b.dataset.editUser;state.modal='editUser';render();});
@@ -744,6 +775,37 @@ async function resetTask(){
   const t=state.db.tasks.find(x=>x.id===state.taskId);if(!confirm('Zwolnić wykonawcę i ustawić zadanie jako nowe?'))return;
   await withAction('Resetowanie zadania…',async()=>{if(state.mode==='demo'){Object.assign(t,{status:'open',claimedBy:null,claimedAt:null,deadlineAt:null,completedAt:null,report:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);saveDemoDB();}else{await pgPatch('tasks',`id=eq.${t.id}`,{status:'open',claimed_by:null,claimed_at:null,deadline_at:null,report_text:null,report_submitted_at:null,completed_at:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);await loadCloudDB({silent:true});}state.modal='detail';});
 }
+async function saveInspection(){
+  if(!isAdmin())return;
+  const name=document.getElementById('f-inspection-name').value.trim(),locationId=document.getElementById('f-inspection-location').value,validUntil=document.getElementById('f-inspection-until').value,lastInspected=document.getElementById('f-inspection-last').value||null,notes=document.getElementById('f-inspection-notes').value.trim();
+  if(!name||!locationId||!validUntil)return toast('Wpisz nazwę, obiekt i datę ważności.');
+  if(lastInspected&&lastInspected>validUntil)return toast('Data ostatniego przeglądu nie może być późniejsza niż data ważności.');
+  const edit=state.modal==='editInspection',id=state.inspectionId;
+  await withAction('Zapisywanie przeglądu…',async()=>{
+    if(state.mode==='demo'){
+      state.db.inspections ||= [];
+      const value={name,locationId,validUntil,lastInspected,notes};
+      if(edit)Object.assign(state.db.inspections.find(x=>x.id===id),value);
+      else state.db.inspections.push({id:uid(),...value});
+      saveDemoDB();state.inspections=state.db.inspections;
+    }else{
+      const value={name,location_id:locationId,valid_until:validUntil,last_inspected:lastInspected,notes};
+      if(edit)await pgPatch('inspections',`id=eq.${encodeURIComponent(id)}`,value);
+      else await pgPost('inspections',value);
+      await loadCloudDB({silent:true});
+    }
+    state.modal=null;state.inspectionId=null;
+  });
+}
+async function deleteInspection(){
+  if(!isAdmin()||!state.inspectionId||!confirm('Usunąć ten przegląd?'))return;
+  const id=state.inspectionId;
+  await withAction('Usuwanie przeglądu…',async()=>{
+    if(state.mode==='demo'){state.db.inspections=state.db.inspections.filter(x=>x.id!==id);saveDemoDB();state.inspections=state.db.inspections;}
+    else{await pgDelete('inspections',`id=eq.${encodeURIComponent(id)}`);await loadCloudDB({silent:true});}
+    state.modal=null;state.inspectionId=null;
+  });
+}
 async function saveLocationFromForm(){
   const name=document.getElementById('f-locname').value.trim();if(!name)return toast('Wpisz nazwę obiektu.');const v={name,city:document.getElementById('f-city').value.trim(),address:document.getElementById('f-address').value.trim(),description:document.getElementById('f-locdesc').value.trim()},edit=state.modal==='editLocation';if(edit)v.active=document.getElementById('f-locactive').checked;
   await withAction(edit?'Zapisywanie obiektu…':'Dodawanie obiektu…',async()=>{if(state.mode==='demo'){if(edit)Object.assign(state.db.locations.find(x=>x.id===state.locationId),v);else state.db.locations.push({id:uid(),...v,active:true});await logEvent(edit?'location_edit':'location',`${edit?'Zmieniono':'Dodano'} obiekt „${name}”`);saveDemoDB();}else{if(edit)await pgPatch('locations',`id=eq.${state.locationId}`,v);else await pgPost('locations',v);await logEvent(edit?'location_edit':'location',`${edit?'Zmieniono':'Dodano'} obiekt „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.locationId=null;});
@@ -857,6 +919,10 @@ async function openAttachment(id){
   }
 }
 function updateTimers(){
+  document.querySelectorAll('[data-inspection-until]').forEach(el=>{
+    const c=inspectionCountdown(el.dataset.inspectionUntil);
+    el.textContent=c.text;el.closest('.inspection-card')?.classList.toggle('expired',c.status==='expired');
+  });
   document.querySelectorAll('[data-attendance-start]').forEach(el=>{const tick=()=>{el.textContent=duration(Date.now()-new Date(el.dataset.attendanceStart).getTime());};tick();});document.querySelectorAll('[data-deadline]').forEach(el=>{if(!el.dataset.deadline)return;const ms=new Date(el.dataset.deadline)-Date.now();el.textContent=duration(ms);el.classList.toggle('over',ms<0);});}
 
 fileInput.addEventListener('change',()=>{const max=(BASE_CFG.MAX_ATTACHMENT_MB||50)*1024*1024,arr=[...fileInput.files],too=arr.find(f=>f.size>max);if(too){toast(`${too.name} przekracza limit ${BASE_CFG.MAX_ATTACHMENT_MB||50} MB.`);fileInput.value='';return;}selectedFiles=arr;const box=document.getElementById('file-list');if(box)box.innerHTML=selectedFiles.map(f=>`<span class="filetag">${esc(f.name)} • ${bytes(f.size)}</span>`).join('');});
