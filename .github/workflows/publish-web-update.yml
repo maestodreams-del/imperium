@@ -41,7 +41,7 @@ jobs:
 
       - name: Upload package to private Supabase Storage
         env:
-          SUPABASE_URL: https://kpqhmnietusedznadjjy.supabase.co
+          SUPABASE_URL: https://kpqhmmietusedznadjjy.supabase.co
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           test -n "$SUPABASE_SECRET_KEY" || (echo "SUPABASE_SECRET_KEY is missing" && exit 1)
