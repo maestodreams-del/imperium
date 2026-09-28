@@ -30,7 +30,7 @@ public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQ = 9131;
     private static final int NOTIFICATION_REQ = 9132;
-    private static final String CHANNEL_ID = "imperium_updates";
+    private static final String CHANNEL_ID = "imperium_updates_v2";
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
