@@ -1083,3 +1083,30 @@ td {
     transform: translateY(110vh) rotate(360deg);
   }
 }
+
+
+/* ===== IMPERIUM — MELDUNEK NA OBIEKCIE ===== */
+.attendance-live,.attendance-history{display:grid;gap:10px}
+.attendance-live-row,.attendance-row,.attendance-active>div{
+  display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid rgba(169,126,38,.28);
+  border-radius:14px;background:rgba(255,250,235,.72)
+}
+.attendance-live-row>div,.attendance-row>div:first-child,.attendance-active>div>div{display:grid;gap:3px;flex:1}
+.attendance-live-row small,.attendance-row small,.attendance-active small{display:block;color:#75684f;margin-top:3px}
+.attendance-live-row strong{margin-left:auto;font-variant-numeric:tabular-nums;color:#8a641b}
+.attendance-dot{width:10px;height:10px;border-radius:50%;background:#3b9b61;box-shadow:0 0 0 4px rgba(59,155,97,.13);flex:0 0 auto}
+.attendance-checkin{max-width:760px;margin-left:auto;margin-right:auto}
+.attendance-active{display:grid;gap:14px}
+.attendance-active>div{align-items:flex-start}
+.attendance-active strong{display:block;margin-top:8px;font-size:28px;font-variant-numeric:tabular-nums;color:#8a641b}
+.attendance-active .dangerbtn{width:100%}
+.attendance-row{justify-content:space-between}
+.attendance-times{text-align:right;display:grid;gap:4px}
+.attendance-times span{font-size:12px;color:#75684f}
+.attendance-times b{font-variant-numeric:tabular-nums;color:#8a641b}
+@media(max-width:700px){
+  .attendance-row{align-items:flex-start;flex-direction:column}
+  .attendance-times{text-align:left}
+  .bottomnav-inner{overflow-x:auto;justify-content:flex-start}
+  .bottomnav .navitem{min-width:78px;flex:0 0 auto}
+}
