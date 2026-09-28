@@ -725,18 +725,14 @@ public void checkWebUpdate(
     if (version <= getInstalledWebVersion()) {
         return;
     }
+    downloadAndInstallUpdate(
+        version,
+        versionName,
+        packageUrl,
+        accessToken,
+        apiKey
+);
 
-    runOnUiThread(() ->
-            Toast.makeText(
-                    MainActivity.this,
-                    "Dostępna aktualizacja IMPERIUM: "
-                            + versionName,
-                    Toast.LENGTH_SHORT
-            ).show()
-    );
-
-    // Następny krok:
-    // pobranie pakietu i instalacja aktualizacji
 }
         @JavascriptInterface
         public void notify(
