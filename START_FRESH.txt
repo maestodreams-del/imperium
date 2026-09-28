@@ -1,0 +1,2 @@
+Dla instalacji od zera uruchom w Supabase tylko: backend/schema.sql
+Pliki upgrade-* są potrzebne wyłącznie przy aktualizacji starszej bazy IMPERIUM.
