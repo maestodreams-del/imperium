@@ -820,5 +820,29 @@ async function init(){
   if(state.mode==='demo'){state.db=loadDemoDB();try{state.demoSession=JSON.parse(localStorage.getItem(DEMO_SESSION_KEY));}catch(e){}}
   render();
 }
-init();
+function initSeason(){
+  const m=new Date().getMonth()+1;
+  let icons;
+
+  if(m>=3 && m<=5) icons=['🌸','🌺','🌿'];
+  else if(m>=6 && m<=8) icons=['☀️','✨'];
+  else if(m>=9 && m<=11) icons=['🍂','🍁','🍃'];
+  else icons=['❄️','❄','✦'];
+
+  const box=document.createElement('div');
+  box.className='season';
+
+  for(let i=0;i<18;i++){
+    const x=document.createElement('span');
+    x.innerText=icons[Math.floor(Math.random()*icons.length)];
+    x.style.left=Math.random()*100+'%';
+    x.style.animationDelay=Math.random()*10+'s';
+    box.appendChild(x);
+  }
+
+  document.body.appendChild(box);
+}
+
+initSeason();
+  init();
 })();
