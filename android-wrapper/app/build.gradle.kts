@@ -1,14 +1,33 @@
-plugins { id("com.android.application") }
+plugins {
+    id("com.android.application")
+}
 
 android {
     namespace = "pl.imperium.app"
     compileSdk = 35
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../imperium-release.jks")
+            storePassword = System.getenv("IMPERIUM_KEYSTORE_PASSWORD")
+            keyAlias = "imperium"
+            keyPassword = System.getenv("IMPERIUM_KEY_PASSWORD")
+        }
+    }
+
     defaultConfig {
         applicationId = "pl.imperium.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "5.0.0"
+
+        versionCode = 6
+        versionName = "5.1.0"
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
 }
