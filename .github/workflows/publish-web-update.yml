@@ -51,7 +51,7 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1             -v version="${{ inputs.version }}"             -v version_name="${{ inputs.version_name }}"             -v package_url="imperium-web-${{ inputs.version }}.zip" <<'SQL'
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1             -v version="${{ inputs.version }}"             -v version_name="${{ inputs.version_name }}"             -v package_url="https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${{ inputs.version }}.zip" <<'SQL'
           begin;
           update public.app_updates set active=false where active=true;
           insert into public.app_updates(version,version_name,package_url,active)
