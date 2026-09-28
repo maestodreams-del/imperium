@@ -1056,3 +1056,30 @@ td {
     gap: 10px;
   }
 }
+/* IMPERIUM — dekoracje sezonowe */
+
+.season {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.season span {
+  position: absolute;
+  top: -50px;
+  animation: seasonFall 12s linear infinite;
+  font-size: 22px;
+  opacity: .45;
+}
+
+@keyframes seasonFall {
+  0% {
+    transform: translateY(-50px) rotate(0deg);
+  }
+
+  100% {
+    transform: translateY(110vh) rotate(360deg);
+  }
+}
