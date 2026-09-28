@@ -1,0 +1,60 @@
+name: Publish IMPERIUM web update
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Web update version
+        required: true
+        default: "1"
+      version_name:
+        description: Web update name
+        required: true
+        default: "Meldunek 1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client zip
+
+      - name: Build web package
+        run: |
+          mkdir -p package/icons
+          cp android-wrapper/app/src/main/assets/index.html package/
+          cp android-wrapper/app/src/main/assets/app.js package/
+          cp android-wrapper/app/src/main/assets/styles.css package/
+          cp android-wrapper/app/src/main/assets/config.js package/
+          cp android-wrapper/app/src/main/assets/manifest.webmanifest package/
+          cp android-wrapper/app/src/main/assets/sw.js package/
+          cp android-wrapper/app/src/main/assets/icons/icon.svg package/icons/
+          cd package
+          zip -r ../imperium-web-${{ inputs.version }}.zip .
+
+      - name: Upload package to private Supabase Storage
+        env:
+          SUPABASE_URL: https://kpqhmnietusedznadjjy.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          test -n "$SUPABASE_SECRET_KEY" || (echo "SUPABASE_SECRET_KEY is missing" && exit 1)
+          curl --fail-with-body -X POST             "$SUPABASE_URL/storage/v1/object/app-updates/imperium-web-${{ inputs.version }}.zip"             -H "Authorization: Bearer $SUPABASE_SECRET_KEY"             -H "apikey: $SUPABASE_SECRET_KEY"             -H "Content-Type: application/zip"             --data-binary "@imperium-web-${{ inputs.version }}.zip"
+
+      - name: Activate update
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1             -v version="${{ inputs.version }}"             -v version_name="${{ inputs.version_name }}"             -v package_url="imperium-web-${{ inputs.version }}.zip" <<'SQL'
+          begin;
+          update public.app_updates set active=false where active=true;
+          insert into public.app_updates(version,version_name,package_url,active)
+          values (:'version'::integer, :'version_name', :'package_url', true);
+          commit;
+          SQL
