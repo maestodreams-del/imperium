@@ -1110,3 +1110,17 @@ td {
   .bottomnav-inner{overflow-x:auto;justify-content:flex-start}
   .bottomnav .navitem{min-width:78px;flex:0 0 auto}
 }
+
+
+/* IMPERIUM web update v2 — chat wallpaper */
+.chat-messages{
+  position:relative;
+  background-image:
+    linear-gradient(rgba(12,9,5,.58),rgba(12,9,5,.72)),
+    url('chat_bg.jpg');
+  background-size:cover;
+  background-position:center 30%;
+  background-repeat:no-repeat;
+  background-attachment:local;
+}
+.chat-message{position:relative;z-index:1;backdrop-filter:blur(2px)}
