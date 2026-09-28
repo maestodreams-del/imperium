@@ -476,7 +476,28 @@ function taskCard(t,u){
   const loc=getLoc(t.locationId),owner=getUser(t.claimedBy),rem=t.deadlineAt?new Date(t.deadlineAt)-Date.now():null,statusClass=t.status==='in_progress'?'progress':t.status==='review'?'review':t.status==='done'?'done':'';
   const claimable=t.status==='open'&&(u.role==='admin'||u.locationIds.includes(t.locationId));
   const fileCount=(t.attachments?.length||0)+(t.report?.attachments?.length||0);
-  return `<article class="task" data-task="${t.id}"><div class="task-head"><div><div class="location">⌖ ${esc(loc?.name||'')}</div><h3>${esc(t.title)}</h3></div><span class="pill ${t.priority}">${priorityLabel(t.priority)}</span></div><p class="desc">${esc(t.description||'Brak opisu.')}</p>${t.sanctionType&&t.sanctionType!=='none'?`<div class="task-sanction">⚠ ${esc(sanctionLabel(t.sanctionType))}${t.sanctionText?`: ${esc(t.sanctionText)}`:''}</div>`:''}<div class="meta"><span class="pill ${statusClass}">${taskStatusLabel(t.status)}</span><span class="pill">⏱ ${t.durationMin} min</span>${t.rewardCoins?`<span class="pill coin-plus">🪙 +${t.rewardCoins} NK</span>`:''}${t.penaltyCoins?`<span class="pill coin-minus">−${t.penaltyCoins} NK</span>`:''}${t.notes?'<span class="pill">📝 Uwagi</span>':''}${t.sanctionType&&t.sanctionType!=='none'?'<span class="pill sanction-pill">⚠ Sankcja</span>':''}${fileCount?`<span class="pill">📎 ${fileCount}</span>`:''}</div>${t.status==='in_progress'||t.status==='review'?`<div class="timer ${rem<0?'over':''}" data-deadline="${t.deadlineAt||''}">${t.status==='review'?'RAPORT WYSŁANY':duration(rem||0)}</div>`:''}<div class="task-footer"><div class="owner">${owner?'Wykonawca':'Nieprzydzielone'}<b>${owner?esc(owner.name):'—'}</b></div><div class="task-actions">${claimable?'<button class="smallbtn gold" data-action="claim">Przejmij</button>':''}${t.status==='in_progress'&&t.claimedBy===u.id?'<button class="smallbtn gold" data-action="report">Raport</button>':''}<button class="smallbtn" data-action="detail">Szczegóły</button></div></div></article>`;
+  const pcode=t.priority==='urgent'?'CRITICAL':t.priority==='high'?'HIGH':'STANDARD';
+  return `<article class="task mission-card" data-task="${t.id}">
+    <div class="mission-rail"></div>
+    <div class="mission-top">
+      <div class="mission-object"><span>SEKTOR</span><b>${esc(loc?.name||'—')}</b></div>
+      <div class="mission-priority ${t.priority}"><i></i><span>${pcode}</span></div>
+    </div>
+    <h3 class="mission-title">${esc(t.title)}</h3>
+    <p class="desc mission-desc">${esc(t.description||'Brak opisu.')}</p>
+    ${t.sanctionType&&t.sanctionType!=='none'?`<div class="task-sanction">⚠ ${esc(sanctionLabel(t.sanctionType))}${t.sanctionText?`: ${esc(t.sanctionText)}`:''}</div>`:''}
+    <div class="mission-data">
+      <div><span>STATUS</span><b class="${statusClass}">${taskStatusLabel(t.status)}</b></div>
+      <div><span>CZAS</span><b>${t.durationMin} MIN</b></div>
+      <div><span>WYKONAWCA</span><b>${owner?esc(owner.name):'—'}</b></div>
+      ${t.rewardCoins?`<div><span>NAGRODA</span><b>+${t.rewardCoins} NK</b></div>`:''}
+    </div>
+    ${t.status==='in_progress'||t.status==='review'?`<div class="mission-timer"><span>${t.status==='review'?'TRANSMISJA RAPORTU':'CZAS OPERACJI'}</span><strong class="${rem<0?'over':''}" data-deadline="${t.deadlineAt||''}">${t.status==='review'?'RAPORT WYSŁANY':duration(rem||0)}</strong></div>`:''}
+    <div class="mission-footer">
+      <div class="mission-flags">${t.notes?'<span>NOTE</span>':''}${fileCount?`<span>FILE ${fileCount}</span>`:''}${t.penaltyCoins?`<span>−${t.penaltyCoins} NK</span>`:''}</div>
+      <div class="task-actions">${claimable?'<button class="smallbtn gold" data-action="claim">PRZEJMIJ</button>':''}${t.status==='in_progress'&&t.claimedBy===u.id?'<button class="smallbtn gold" data-action="report">RAPORT</button>':''}<button class="smallbtn" data-action="detail">OTWÓRZ</button></div>
+    </div>
+  </article>`;
 }
 function renderLocationsPage(){
   const visible=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
