@@ -747,7 +747,7 @@ public void checkWebUpdate(
         int version,
         String versionName,
         String packageUrl,
-        String accessToken
+        String accessToken,
     String apiKey
 ) {
 
