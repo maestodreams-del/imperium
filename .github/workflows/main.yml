@@ -30,6 +30,12 @@ jobs:
         run: |
           echo "${{ secrets.IMPERIUM_KEYSTORE_BASE64 }}" | base64 --decode > android-wrapper/imperium-release.jks
 
+      - name: Verify bundled web UI
+        run: |
+          grep -q "Meldunek" android-wrapper/app/src/main/assets/app.js
+          cmp app.js android-wrapper/app/src/main/assets/app.js
+          cmp styles.css android-wrapper/app/src/main/assets/styles.css
+
       - name: Build signed IMPERIUM release
         working-directory: android-wrapper
         env:
