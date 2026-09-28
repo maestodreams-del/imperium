@@ -301,7 +301,18 @@ function demoLogin(id){ state.demoSession={userId:id}; localStorage.setItem(DEMO
 function demoLogout(){ localStorage.removeItem(DEMO_SESSION_KEY);state.demoSession=null;render(); }
 
 // ---------- UI ----------
-function nav(id,icon,label){return `<button class="navitem ${state.tab===id?'active':''}" data-tab="${id}"><i>${icon}</i>${label}</button>`;}
+function imperialIcon(id){
+  const p={
+    tasks:'<svg viewBox="0 0 24 24"><path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5"/></svg>',
+    locations:'<svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
+    activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
+    attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
+    chat:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h6"/></svg>',
+    team:'<svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20c0-4 2.5-6 6-6s6 2 6 6M15 15c3 0 5 1.5 5 5"/></svg>',
+    settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
+  };return p[id]||'';
+}
+function nav(id,label){return `<button class="navitem ${state.tab===id?'active':''}" data-tab="${id}"><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
 function chip(id,label){return `<button class="chip ${state.filter===id?'active':''}" data-filter="${id}">${label}</button>`;}
 function render(){
   if(state.loading)return;
@@ -321,9 +332,14 @@ function render(){
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
-  app.innerHTML=`<div class="app"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div><h1>IMPERIUM</h1><small><b class="latin-motto">Ad gloriam Imperatoris Nikitae</b><span>Na chwałę Imperatora Nikity</span></small></div></div><div class="top-actions"><span class="${state.mode==='cloud'?'cloud-state':'cloud-state offline'}">${state.mode==='cloud'?'☁ ONLINE':'DEMO'}</span><span class="coin-badge">🪙 ${coinBalance(u.id)} NK</span><span class="badge">${u.role==='admin'?'ADMIN':'PRACOWNIK'}</span>${u.role==='admin'?'<button class="goldbtn" id="new-task">+ Zadanie</button>':''}<button class="iconbtn" id="logout" title="Wyloguj">↪</button></div></div></header>
+  app.innerHTML=`<div class="app aureus-shell">
+  <header class="topbar"><div class="topbar-inner">
+    <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
+    <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${u.role==='admin'?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
+  </div></header>
   <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','▦','Zadania')}${nav('locations','⌖','Obiekty')}${nav('activity','◴','Aktywność')}${nav('attendance','📍','Meldunek')}${nav('chat','💬','Czat')}${nav('team','♟','Zespół')}${nav('settings','⚙','Ustawienia')}</div></nav>${renderModal()}</div>`;
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('settings','System')}</div></nav>
+  ${renderModal()}</div>`;
   bind();
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
@@ -453,7 +469,7 @@ async function sendChatMessage(){
   if(state.filter!=='all')tasks=tasks.filter(t=>state.filter==='mine'?t.claimedBy===u.id&&t.status!=='done':t.status===state.filter);
   tasks.sort((a,b)=>({urgent:0,high:1,normal:2}[a.priority]-{urgent:0,high:1,normal:2}[b.priority])||(new Date(b.createdAt)-new Date(a.createdAt)));
   const noLoc=u.role!=='admin'&&u.locationIds.length===0?'<div class="status-note">Twoje konto jest aktywne, ale administrator nie przypisał jeszcze żadnego obiektu. Po przypisaniu zadania pojawią się tutaj automatycznie.</div>':'';
-  return `${noLoc}<section class="hero"><div class="hero-card"><div class="eyebrow">Centrum dowodzenia</div><h2>Dzień dobry, ${esc(u.name)}</h2><p>${u.role==='admin'?'Edytuj zadania i obiekty, kontroluj czas, raporty oraz dokumentację.':'Przejmij zadanie, wykonaj je i prześlij raport ze zdjęciami, wideo lub dokumentami.'}</p></div><div class="stats"><div class="stat"><b>${open}</b><span>Nowe</span></div><div class="stat"><b>${prog}</b><span>W toku</span></div><div class="stat"><b>${rev}</b><span>Do akceptacji</span></div><div class="stat"><b>${urg}</b><span>Pilne</span></div></div></section>
+  return `${noLoc}<section class="hero command-hero"><div class="hero-card"><div class="hero-code">AUREUS / 01</div><div class="eyebrow">Centrum dowodzenia</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'Nadzór operacyjny • zadania • obiekty • raporty':'Panel operacyjny • zadania • raporty • meldunek'}</p><div class="hero-scan"></div></div><div class="stats"><div class="stat"><b>${open}</b><span>NOWE</span></div><div class="stat"><b>${prog}</b><span>W TOKU</span></div><div class="stat"><b>${rev}</b><span>AKCEPTACJA</span></div><div class="stat ${urg?'alert':''}"><b>${urg}</b><span>PILNE</span></div></div></section>
   <div class="toolbar"><div><div class="eyebrow">Operacje</div><h2 class="section-title">Zadania</h2></div><div class="filters">${chip('all','Wszystkie')}${chip('open','Nowe')}${chip('in_progress','W toku')}${chip('review','Akceptacja')}${chip('mine','Moje')}${chip('done','Zakończone')}</div></div><div class="grid">${tasks.length?tasks.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak zadań w tym widoku.</div>'}</div>`;
 }
 function taskCard(t,u){
