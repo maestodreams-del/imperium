@@ -239,6 +239,9 @@ async function loadCloudDB({silent=false}={}){
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
     state.lastEventAt=newest; state.cloudError=''; state.loading=false;
+    if(!silent){
+  checkImperiumUpdate().catch(()=>{});
+}
     if(!silent || (!state.modal && state.tab!=='chat')) render();
     if(isAdmin() && state.db.locations.length===0){ try{await cloudFetch('/rest/v1/rpc/seed_default_locations',{method:'POST',body:{}});await sleep(300);return loadCloudDB({silent:false});}catch(e){} }
   }catch(e){ state.loading=false; state.cloudError=e.message; if(/sesja|JWT|token|expired/i.test(e.message)){localStorage.removeItem(AUTH_KEY);state.auth=null;} render(); }
