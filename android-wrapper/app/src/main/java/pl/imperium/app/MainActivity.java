@@ -183,7 +183,18 @@ public class MainActivity extends Activity {
             channel.setDescription(
                     "Zmiany zadań i raportów"
             );
+Uri soundUri = Uri.parse(
+    "android.resource://" + getPackageName() + "/" + R.raw.imperium_notification
+);
 
+android.media.AudioAttributes audioAttributes =
+    new android.media.AudioAttributes.Builder()
+        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build();
+
+channel.setSound(soundUri, audioAttributes);
+channel.enableVibration(true);
             getSystemService(
                     NotificationManager.class
             ).createNotificationChannel(channel);
