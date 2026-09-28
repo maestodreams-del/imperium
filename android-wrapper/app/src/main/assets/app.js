@@ -182,6 +182,34 @@ async function signOutCloud(){
   localStorage.removeItem(AUTH_KEY); state.auth=null; state.db=null; stopPolling(); render();
 }
 async function pgGet(query){ return cloudFetch(`/rest/v1/${query}`); }
+  async function checkImperiumUpdate(){
+  if(state.mode!=='cloud' || !state.auth?.access_token) return;
+
+  try{
+    const updates=await pgGet(
+      'app_updates?select=version,version_name,package_url&active=eq.true&order=version.desc&limit=1'
+    );
+
+    if(!updates?.length) return;
+
+    const update=updates[0];
+
+    if(
+      window.AndroidBridge &&
+      typeof AndroidBridge.checkWebUpdate==='function'
+    ){
+      AndroidBridge.checkWebUpdate(
+        Number(update.version),
+        String(update.version_name||''),
+        String(update.package_url||''),
+        String(state.auth.access_token||'')
+      );
+    }
+
+  }catch(e){
+    console.warn('IMPERIUM update check:',e);
+  }
+}
 async function pgPost(table,body,prefer='return=minimal'){ return cloudFetch(`/rest/v1/${table}`,{method:'POST',body,headers:{Prefer:prefer}}); }
 async function pgPatch(table,filter,body,prefer='return=minimal'){ return cloudFetch(`/rest/v1/${table}?${filter}`,{method:'PATCH',body,headers:{Prefer:prefer}}); }
 async function pgDelete(table,filter){ return cloudFetch(`/rest/v1/${table}?${filter}`,{method:'DELETE'}); }
