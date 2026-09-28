@@ -768,6 +768,15 @@ channel.enableVibration(true);
     }
 
     public class AndroidBridge {
+        @JavascriptInterface
+        public String diagnostics() {
+            String currentUrl = web != null ? web.getUrl() : "";
+            return "APK=5.2.4; bundled=" + BUNDLED_WEB_VERSION
+                    + "; installedWeb=" + getInstalledWebVersion()
+                    + "; activeIndex=" + (activeWebDir != null && new File(activeWebDir, "index.html").exists())
+                    + "; url=" + currentUrl;
+        }
+
 @JavascriptInterface
 public void checkWebUpdate(
         int version,
