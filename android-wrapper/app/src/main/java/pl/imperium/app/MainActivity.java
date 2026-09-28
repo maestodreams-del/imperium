@@ -25,7 +25,13 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 import java.io.OutputStream;
-
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQ = 9131;
@@ -34,7 +40,159 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
+private File updatesDir;
+private File activeWebDir;
+private File stagingWebDir;
 
+private void prepareUpdateStorage() {
+    updatesDir = new File(getFilesDir(), "imperium_updates");
+    activeWebDir = new File(updatesDir, "active");
+stagingWebDir = new File(updatesDir, "staging");
+    if (!updatesDir.exists()) {
+        updatesDir.mkdirs();
+    }
+}
+private void unzipUpdate(File zipFile, File destination) throws Exception {
+
+    if (destination.exists()) {
+        deleteDirectory(destination);
+    }
+
+    if (!destination.mkdirs() && !destination.exists()) {
+        throw new Exception("Nie udało się utworzyć katalogu aktualizacji.");
+    }
+
+    String destinationPath =
+            destination.getCanonicalPath() + File.separator;
+
+    try (
+            InputStream input = new java.io.FileInputStream(zipFile);
+            ZipInputStream zip = new ZipInputStream(input)
+    ) {
+        ZipEntry entry;
+
+        while ((entry = zip.getNextEntry()) != null) {
+
+            File target = new File(destination, entry.getName());
+
+            // Ochrona przed ZIP Path Traversal
+            String targetPath = target.getCanonicalPath();
+
+            if (!targetPath.startsWith(destinationPath)) {
+                throw new Exception("Nieprawidłowy plik aktualizacji.");
+            }
+
+            if (entry.isDirectory()) {
+
+                if (!target.exists() && !target.mkdirs()) {
+                    throw new Exception("Nie udało się utworzyć katalogu.");
+                }
+
+            } else {
+
+                File parent = target.getParentFile();
+
+                if (parent != null &&
+                        !parent.exists() &&
+                        !parent.mkdirs()) {
+                    throw new Exception("Nie udało się utworzyć katalogu.");
+                }
+
+                try (FileOutputStream output =
+                             new FileOutputStream(target)) {
+
+                    byte[] buffer = new byte[8192];
+                    int count;
+
+                    while ((count = zip.read(buffer)) != -1) {
+                        output.write(buffer, 0, count);
+                    }
+                }
+            }
+
+            zip.closeEntry();
+        }
+    }
+
+    // Пакет считаем рабочим только при наличии index.html
+    File index = new File(destination, "index.html");
+
+    if (!index.exists()) {
+        deleteDirectory(destination);
+        throw new Exception(
+                "Aktualizacja nie zawiera index.html."
+        );
+    }
+}
+
+private void deleteDirectory(File file) {
+
+    if (file == null || !file.exists()) {
+        return;
+    }
+
+    if (file.isDirectory()) {
+        File[] children = file.listFiles();
+
+        if (children != null) {
+            for (File child : children) {
+                deleteDirectory(child);
+            }
+        }
+    }
+
+    file.delete();
+}
+    private void activateStagingUpdate() throws Exception {
+
+    File stagingIndex =
+            new File(stagingWebDir, "index.html");
+
+    if (!stagingIndex.exists()) {
+        throw new Exception(
+                "Brak prawidłowej aktualizacji."
+        );
+    }
+
+    File backupDir =
+            new File(updatesDir, "backup");
+
+    if (backupDir.exists()) {
+        deleteDirectory(backupDir);
+    }
+
+    if (activeWebDir.exists()) {
+        if (!activeWebDir.renameTo(backupDir)) {
+            throw new Exception(
+                    "Nie udało się zabezpieczyć poprzedniej wersji."
+            );
+        }
+    }
+
+    if (!stagingWebDir.renameTo(activeWebDir)) {
+
+        if (backupDir.exists()) {
+            backupDir.renameTo(activeWebDir);
+        }
+
+        throw new Exception(
+                "Nie udało się aktywować aktualizacji."
+        );
+    }
+}
+private void loadImperium() {
+    File updatedIndex = new File(activeWebDir, "index.html");
+
+    if (updatedIndex.exists()) {
+        web.loadUrl(
+                "file://" + updatedIndex.getAbsolutePath()
+        );
+    } else {
+        web.loadUrl(
+                "file:///android_asset/index.html"
+        );
+    }
+}
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -108,7 +266,8 @@ public class MainActivity extends Activity {
                 "AndroidBridge"
         );
 
-        web.loadUrl("file:///android_asset/index.html");
+       prepareUpdateStorage();
+loadImperium();
 
         setContentView(web);
     }
