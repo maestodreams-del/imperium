@@ -1164,3 +1164,67 @@ td {
     padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));
   }
 }
+
+
+/* =========================================================
+   IMPERIUM // AUREUS — IMPERIAL TECHNOPUNK UI v1
+   visual-only layer; application logic remains untouched
+   ========================================================= */
+:root{
+  --au-bg:#08090b;--au-panel:#111318;--au-panel2:#17191e;
+  --au-gold:#c9a54a;--au-gold2:#f0d786;--au-bronze:#76551d;
+  --au-text:#eee8d8;--au-muted:#8f8b80;--au-line:rgba(201,165,74,.28);
+}
+html,body{background:
+  radial-gradient(circle at 50% -10%,rgba(201,165,74,.12),transparent 32%),
+  linear-gradient(180deg,#0b0c0f,#060708 75%)!important;color:var(--au-text)!important}
+body:after{z-index:-1!important;background-image:
+ linear-gradient(rgba(201,165,74,.025) 1px,transparent 1px),
+ linear-gradient(90deg,rgba(201,165,74,.025) 1px,transparent 1px)!important;background-size:28px 28px!important}
+body:before{height:2px!important;background:linear-gradient(90deg,transparent,#6e501d,#f1d77c,#6e501d,transparent)!important;box-shadow:0 0 18px rgba(226,188,87,.45)!important}
+.season{display:none!important}
+.panel,.card,.task,.hero,.settings-card,.modal,.chat-panel{
+ color:var(--au-text)!important;background:
+ linear-gradient(135deg,rgba(25,27,32,.98),rgba(11,12,15,.98))!important;
+ border:1px solid var(--au-line)!important;border-radius:3px!important;
+ box-shadow:0 14px 38px rgba(0,0,0,.38),inset 0 1px rgba(255,225,139,.05)!important}
+.hero-card{position:relative;overflow:hidden}
+.hero-card:after{content:"IMPERIUM // AUREUS";position:absolute;right:14px;top:10px;font-size:9px;letter-spacing:.2em;color:rgba(240,215,134,.3)}
+h1,h2,h3,.brand,.section-title{color:#f2e7c6!important;text-shadow:0 0 16px rgba(201,165,74,.12)!important}
+.brand{letter-spacing:.15em!important}.motto,.eyebrow{color:var(--au-gold)!important;letter-spacing:.18em!important}
+.subtle,.modal-sub,small{color:var(--au-muted)!important}
+input,textarea,select{color:#f1ead8!important;background:#090a0d!important;border:1px solid rgba(201,165,74,.32)!important;border-radius:2px!important;box-shadow:inset 0 0 18px rgba(0,0,0,.3)!important}
+input::placeholder,textarea::placeholder{color:#68675f!important}
+input:focus,textarea:focus,select:focus{border-color:var(--au-gold)!important;box-shadow:0 0 0 2px rgba(201,165,74,.1),0 0 18px rgba(201,165,74,.08)!important}
+button:not(.ghost):not(.dangerbtn),.btn:not(.ghost):not(.dangerbtn),.goldbtn{
+ color:#0c0b08!important;background:linear-gradient(180deg,#e6c86f,#aa812d)!important;
+ border:1px solid #efd77f!important;border-radius:2px!important;box-shadow:0 0 18px rgba(201,165,74,.12),inset 0 1px rgba(255,255,255,.3)!important;
+ text-transform:uppercase;letter-spacing:.045em;font-weight:900}
+button.ghost,.btn.ghost{color:#d7c89e!important;background:#0d0f12!important;border:1px solid rgba(201,165,74,.28)!important;border-radius:2px!important}
+button.active,.btn.active,.tab.active{color:#090806!important;background:linear-gradient(180deg,#f0d783,#b48730)!important;border-color:#f2d77b!important}
+.dangerbtn{border-radius:2px!important;background:linear-gradient(180deg,#8e3236,#541b20)!important;color:#fff!important}
+.task{border-left:3px solid var(--au-gold)!important}.task:before{display:none!important}
+.status-note,.coin,.coin-badge,.coin-task-box,.filetag,.attachment{
+ color:#dbc990!important;background:rgba(201,165,74,.07)!important;border:1px solid rgba(201,165,74,.22)!important;border-radius:2px!important}
+table{background:#0d0f12!important}th{color:#d6bd75!important;background:#17191d!important}td{color:#ddd7c8!important;border-color:rgba(201,165,74,.12)!important}
+.modal-bg{background:rgba(0,0,0,.78)!important;backdrop-filter:blur(8px)}
+.bottomnav{background:rgba(7,8,10,.97)!important;border-top:1px solid rgba(201,165,74,.3)!important;box-shadow:0 -8px 28px rgba(0,0,0,.38)!important}
+.bottomnav .navitem{color:#8f8b80!important;background:transparent!important;border:0!important;box-shadow:none!important}
+.bottomnav .navitem.active{color:#efd47a!important;background:linear-gradient(180deg,rgba(201,165,74,.13),transparent)!important;box-shadow:inset 0 2px #c9a54a!important}
+.chat-header{background:linear-gradient(90deg,rgba(201,165,74,.09),transparent)!important;border-bottom:1px solid var(--au-line)!important}
+.chat-messages{background-color:#08090b!important}
+.chat-message{color:#ded8c9!important;background:rgba(22,24,29,.94)!important;border:1px solid rgba(201,165,74,.2)!important;border-radius:2px 12px 12px 12px!important;box-shadow:0 5px 18px rgba(0,0,0,.25)!important}
+.chat-message.mine{color:#17130b!important;background:linear-gradient(145deg,#ddc16d,#a98232)!important;border-radius:12px 2px 12px 12px!important}
+.chat-message-head b{color:#d8b85d!important}.chat-message-head span{color:#77746c!important}
+.chat-compose{background:#0c0e11!important;border-top:1px solid var(--au-line)!important}
+.attendance-live-row,.attendance-row,.attendance-active>div{background:#0d0f12!important;border:1px solid var(--au-line)!important;border-radius:2px!important}
+.attendance-live-row small,.attendance-row small,.attendance-active small,.attendance-times span{color:var(--au-muted)!important}
+.attendance-live-row strong,.attendance-times b,.attendance-active strong{color:#e0bd5d!important}
+.attendance-dot{background:#d1ad4f!important;box-shadow:0 0 0 3px rgba(209,173,79,.12),0 0 12px rgba(209,173,79,.35)!important}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:#090a0c}::-webkit-scrollbar-thumb{background:#8d6b28;border-radius:0}
+@media(max-width:700px){
+ body{background:linear-gradient(180deg,#090a0d,#050607)!important}
+ .panel,.card,.task,.hero,.settings-card,.modal{border-radius:2px!important}
+ .hero{border-left:2px solid #b58c36!important}
+ .bottomnav .navitem{font-size:11px!important;min-width:72px!important}
+}
