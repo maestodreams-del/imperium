@@ -13,6 +13,7 @@ const syncChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('imper
 
 let selectedFiles = [];
 let pollTimer = null;
+let bottomNavScrollLeft = 0;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
@@ -415,6 +416,8 @@ function nav(id,label,extra=''){return `<button class="navitem ${state.tab===id?
 function chip(id,label){return `<button class="chip ${state.filter===id?'active':''}" data-filter="${id}">${label}</button>`;}
 function render(){
   if(state.loading)return;
+  const previousNav=app.querySelector('.bottomnav-inner');
+  if(previousNav)bottomNavScrollLeft=previousNav.scrollLeft;
   const c=cloudConfig();
   if(!state.mode){ const saved=localStorage.getItem(MODE_KEY); if(saved==='cloud'&&c)state.mode='cloud'; else if(saved==='demo')state.mode='demo'; }
   if(state.mode==='cloud'){
@@ -443,6 +446,8 @@ function render(){
   <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
   <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
+  const bottomNav=app.querySelector('.bottomnav-inner');
+  if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
   bind();
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
