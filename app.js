@@ -33,7 +33,7 @@ function seed(){
     version:2,
     users:[
       {id:'u-admin',name:'Administrator',role:'admin',locationIds:['l1','l2','l3','l4','l5','l6'],active:true},
-      {id:'u-zenon',name:'Zenon',role:'worker',canManageRentals:true,locationIds:['l3','l4'],active:true},
+      {id:'u-zenon',name:'Zenon',role:'worker',canManageRentals:true,canAddInspections:true,canCreateTasks:true,locationIds:['l3','l4'],active:true},
       {id:'u-mikolaj',name:'Mikołaj',role:'worker',locationIds:['l1','l2','l5','l6'],active:true},
       {id:'u-nikolai',name:'Nikolai',role:'worker',locationIds:['l1','l2','l4'],active:true}
     ],
@@ -113,6 +113,9 @@ function getUser(id){ return state.db?.users?.find(u=>u.id===id); }
 function getLoc(id){ return state.db?.locations?.find(l=>l.id===id); }
 function isAdmin(){ return currentUser()?.role==='admin'; }
 function canManageRentals(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canManageRentals); }
+function canAddInspections(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canAddInspections); }
+function canCreateTasks(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canCreateTasks); }
+function allowedLocations(){ return isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser()?.locationIds.includes(l.id)); }
 function taskStatusLabel(s){ return ({open:'Nowe',in_progress:'W toku',review:'Do akceptacji',done:'Zakończone'}[s]||s); }
 function priorityLabel(p){ return ({normal:'Normalne',high:'Wysoki',urgent:'Pilne'}[p]||p); }
 function sanctionLabel(s){ return ({none:'Brak',note:'Uwaga',warning:'Ostrzeżenie',reprimand:'Upomnienie',other:'Inna sankcja'}[s]||s||'Brak'); }
@@ -297,7 +300,7 @@ async function loadCloudDB({silent=false}={}){
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
     const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts]=await Promise.all([
-      pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,created_at&order=created_at.asc'),
+      pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
       pgGet('tasks?select=*&order=created_at.desc'),
@@ -317,7 +320,7 @@ async function loadCloudDB({silent=false}={}){
     state.rentals=(rentals||[]).map(mapRental);
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
     state.shifts=(shifts||[]).map(s=>({id:s.id,userId:s.profile_id,locationId:s.location_id,startsAt:s.starts_at,endsAt:s.ends_at}));
-    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
+    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,canAddInspections:!!p.can_add_inspections,canCreateTasks:!!p.can_create_tasks,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
     state.lastEventAt=newest; state.cloudError=''; state.loading=false;
@@ -415,7 +418,7 @@ function render(){
   app.innerHTML=`<div class="app aureus-shell">
   <header class="topbar"><div class="topbar-inner">
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
-    <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${u.role==='admin'?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
+    <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
   <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
   <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
@@ -550,7 +553,7 @@ function renderInspectionsPage(){
   const sorted=[...visible].sort((a,b)=>a.validUntil.localeCompare(b.validUntil));
   const expired=sorted.filter(i=>inspectionCountdown(i.validUntil).status==='expired').length;
   const soon=sorted.filter(i=>inspectionCountdown(i.validUntil).status==='soon').length;
-  return `<div class="toolbar"><div><div class="eyebrow">Kontrola terminów</div><h2 class="section-title">Przeglądy techniczne</h2></div>${isAdmin()?'<button class="goldbtn" id="add-inspection">+ Dodaj przegląd</button>':''}</div>
+  return `<div class="toolbar"><div><div class="eyebrow">Kontrola terminów</div><h2 class="section-title">Przeglądy techniczne</h2></div>${canAddInspections()?'<button class="goldbtn" id="add-inspection">+ Dodaj przegląd</button>':''}</div>
   <div class="inspection-summary"><div><b>${sorted.length}</b><span>Pozycji</span></div><div class="inspection-expired"><b>${expired}</b><span>Po terminie</span></div><div class="inspection-soon"><b>${soon}</b><span>Do 30 dni</span></div></div>
   <div class="inspection-list">${sorted.map(i=>{const c=inspectionCountdown(i.validUntil);return `<article class="inspection-card ${c.status}"><div class="inspection-head"><div><small>${esc(getLoc(i.locationId)?.name||'Obiekt')}</small><h3>${esc(i.name)}</h3></div><span class="inspection-badge">${c.status==='expired'?'PO TERMINIE':c.status==='soon'?'WKRÓTCE':'WAŻNY'}</span></div><div class="inspection-dates"><span>Ważny do: <b>${esc(i.validUntil)}</b></span>${i.lastInspected?`<span>Ostatni przegląd: ${esc(i.lastInspected)}</span>`:''}</div>${i.notes?`<p>${esc(i.notes)}</p>`:''}<div class="inspection-foot"><strong data-inspection-until="${esc(i.validUntil)}">${c.text}</strong>${isAdmin()?`<button class="smallbtn" data-edit-inspection="${esc(i.id)}">Edytuj</button>`:''}</div></article>`}).join('')||'<div class="empty">Brak wpisów. Dodaj np. przegląd kominiarski, gaśnic lub pięcioletni.</div>'}</div>`;
 }
@@ -742,7 +745,10 @@ function renderModal(){
   if(state.modal==='newInspection'||state.modal==='editInspection'){
     const edit=state.modal==='editInspection',i=edit?(state.inspections||[]).find(x=>x.id===state.inspectionId):null;
     if(edit&&!i)return '';
-    return `<div class="modal-bg"><div class="modal"><h2>${edit?'Edytuj przegląd':'Nowy przegląd'}</h2><div class="field"><label>Nazwa przeglądu</label><input id="f-inspection-name" maxlength="120" value="${esc(i?.name||'')}" placeholder="Np. przegląd kominiarski, gaśnic, pięcioletni"></div><div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-inspection-location">${state.db.locations.map(l=>`<option value="${esc(l.id)}" ${l.id===i?.locationId?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Ważny do</label><input id="f-inspection-until" type="date" value="${esc(i?.validUntil||'')}"></div><div class="field"><label>Data ostatniego przeglądu (opcjonalnie)</label><input id="f-inspection-last" type="date" value="${esc(i?.lastInspected||'')}"></div></div><div class="field"><label>Uwagi (opcjonalnie)</label><textarea id="f-inspection-notes" maxlength="1000" placeholder="Np. numer protokołu, zakres kontroli">${esc(i?.notes||'')}</textarea></div><div class="modal-actions">${edit?'<button class="dangerbtn" id="delete-inspection">Usuń</button>':''}${close}<button class="goldbtn" id="save-inspection">${edit?'Zapisz':'Dodaj'}</button></div></div></div>`;
+    return `<div class="modal-bg"><div class="modal"><h2>${edit?'Edytuj przegląd':'Nowy przegląd'}</h2><div class="field"><label>Nazwa przeglądu</label><input id="f-inspection-name" maxlength="120" value="${esc(i?.name||'')}" placeholder="Np. przegląd kominiarski, gaśnic, pięcioletni"></div><div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-inspection-location">${allowedLocations().map(l=>`<option value="${esc(l.id)}" ${l.id===i?.locationId?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Ważny do</label><input id="f-inspection-until" type="date" value="${esc(i?.validUntil||'')}"></div><div class="field"><label>Data ostatniego przeglądu (opcjonalnie)</label><input id="f-inspection-last" type="date" value="${esc(i?.lastInspected||'')}"></div></div><div class="field"><label>Uwagi (opcjonalnie)</label><textarea id="f-inspection-notes" maxlength="1000" placeholder="Np. numer protokołu, zakres kontroli">${esc(i?.notes||'')}</textarea></div><div class="modal-actions">${edit&&isAdmin()?'<button class="dangerbtn" id="delete-inspection">Usuń</button>':''}${close}<button class="goldbtn" id="save-inspection">${edit?'Zapisz':'Dodaj'}</button></div></div></div>`;
+  }
+  if(state.modal==='newTask'&&!isAdmin()){
+    return `<div class="modal-bg"><div class="modal"><h2>Nowe zadanie</h2><div class="field"><label>Tytuł</label><input id="f-title" maxlength="120"></div><div class="field"><label>Opis</label><textarea id="f-desc"></textarea></div><div class="field"><label>Uwagi i wymagania</label><textarea id="f-notes"></textarea></div><div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-loc">${allowedLocations().filter(l=>l.active).map(l=>`<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Priorytet</label><select id="f-priority"><option value="normal">Normalne</option><option value="high">Wysoki</option><option value="urgent">Pilne</option></select></div></div><div class="field"><label>Czas na wykonanie (minuty)</label><input id="f-duration" type="number" min="5" max="10080" value="60"></div><div class="field"><label>Dodaj zdjęcia lub dokumenty</label><button class="ghost" id="pick-files">+ Wybierz pliki</button><div class="attachments" id="file-list"></div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-task">Utwórz zadanie</button></div></div></div>`;
   }
   if(state.modal==='newTask'||state.modal==='editTask'){
     const edit=state.modal==='editTask',t=edit?state.db.tasks.find(x=>x.id===state.taskId):null;
@@ -763,7 +769,7 @@ function renderModal(){
   if(state.modal==='newUser')return `<div class="modal-bg"><div class="modal"><h2>Nowy pracownik demo</h2><div class="field"><label>Imię / nazwa</label><input id="f-username"></div><div class="field"><label>Obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}"> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user">Dodaj</button></div></div></div>`;
   if(state.modal==='editUser'){
     const u=state.db.users.find(x=>x.id===state.userId);
-    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
+    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><label class="checkrow"><input id="f-add-inspections" type="checkbox" ${u.canAddInspections?'checked':''}> Może dodawać przeglądy w przypisanych obiektach</label><label class="checkrow"><input id="f-create-tasks" type="checkbox" ${u.canCreateTasks?'checked':''}> Może dodawać zadania w przypisanych obiektach</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
   }
   return '';
 }
@@ -880,10 +886,12 @@ async function withAction(label,fn){
 }
 function readTaskForm(){
   const title=document.getElementById('f-title').value.trim();if(!title)throw new Error('Wpisz tytuł zadania.');
-  return {title,description:document.getElementById('f-desc').value.trim(),notes:document.getElementById('f-notes').value.trim(),sanctionType:document.getElementById('f-sanction-type').value,sanctionText:document.getElementById('f-sanction-text').value.trim(),disciplinaryNote:document.getElementById('f-disciplinary').value.trim(),rewardCoins:Math.max(0,Math.floor(Number(document.getElementById('f-reward-coins').value)||0)),penaltyCoins:Math.max(0,Math.floor(Number(document.getElementById('f-penalty-coins').value)||0)),locationId:document.getElementById('f-loc').value,priority:document.getElementById('f-priority').value,durationMin:Math.max(5,Number(document.getElementById('f-duration').value)||60),assignedTo:document.getElementById('f-assignee')?.value||null};
+  return {title,description:document.getElementById('f-desc').value.trim(),notes:document.getElementById('f-notes').value.trim(),sanctionType:(document.getElementById('f-sanction-type')?.value||'none'),sanctionText:(document.getElementById('f-sanction-text')?.value||'').trim(),disciplinaryNote:(document.getElementById('f-disciplinary')?.value||'').trim(),rewardCoins:Math.max(0,Math.floor(Number((document.getElementById('f-reward-coins')?.value||''))||0)),penaltyCoins:Math.max(0,Math.floor(Number((document.getElementById('f-penalty-coins')?.value||''))||0)),locationId:document.getElementById('f-loc').value,priority:document.getElementById('f-priority').value,durationMin:Math.max(5,Number(document.getElementById('f-duration').value)||60),assignedTo:document.getElementById('f-assignee')?.value||null};
 }
 async function saveTaskFromForm(){
   let v;try{v=readTaskForm();}catch(e){return toast(e.message);} const edit=state.modal==='editTask',id=state.taskId;
+  if(edit&&!isAdmin()||!edit&&!canCreateTasks())return;
+  if(!isAdmin()){if(!currentUser().locationIds.includes(v.locationId))return toast('Brak dostępu do obiektu.');Object.assign(v,{sanctionType:'none',sanctionText:'',disciplinaryNote:'',rewardCoins:0,penaltyCoins:0,assignedTo:null});}
   await withAction(edit?'Zapisywanie zmian…':'Tworzenie zadania…',async()=>{
     if(state.mode==='demo'){
       if(edit){const t=state.db.tasks.find(x=>x.id===id);Object.assign(t,v);if(selectedFiles.length)t.attachments.push(...selectedFiles.map(f=>({id:uid(),name:f.name,size:f.size,type:f.type,kind:'task'})));await logEvent('task_edit',`Zmieniono zadanie „${t.title}”`,t.id);}
@@ -999,9 +1007,10 @@ async function deleteRental(){
   });
 }
 async function saveInspection(){
-  if(!isAdmin())return;
+  if(!canAddInspections()||state.modal==='editInspection'&&!isAdmin())return;
   const name=document.getElementById('f-inspection-name').value.trim(),locationId=document.getElementById('f-inspection-location').value,validUntil=document.getElementById('f-inspection-until').value,lastInspected=document.getElementById('f-inspection-last').value||null,notes=document.getElementById('f-inspection-notes').value.trim();
   if(!name||!locationId||!validUntil)return toast('Wpisz nazwę, obiekt i datę ważności.');
+  if(!isAdmin()&&!currentUser().locationIds.includes(locationId))return toast('Brak dostępu do obiektu.');
   if(lastInspected&&lastInspected>validUntil)return toast('Data ostatniego przeglądu nie może być późniejsza niż data ważności.');
   const edit=state.modal==='editInspection',id=state.inspectionId;
   await withAction('Zapisywanie przeglądu…',async()=>{
@@ -1014,7 +1023,7 @@ async function saveInspection(){
     }else{
       const value={name,location_id:locationId,valid_until:validUntil,last_inspected:lastInspected,notes};
       if(edit)await pgPatch('inspections',`id=eq.${encodeURIComponent(id)}`,value);
-      else await pgPost('inspections',value);
+      else await pgPost('inspections',{...value,created_by:currentUser().id});
       await loadCloudDB({silent:true});
     }
     state.modal=null;state.inspectionId=null;
@@ -1035,8 +1044,8 @@ async function saveLocationFromForm(){
 }
 function addDemoUser(){const name=document.getElementById('f-username').value.trim();if(!name)return toast('Wpisz imię pracownika.');const locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);state.db.users.push({id:uid(),name,role:'worker',locationIds:locs,active:true});logEvent('user',`Dodano pracownika „${name}”`);saveDemoDB();state.modal=null;render();}
 async function saveUserEdit(){
-  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
-  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
+  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,canAddInspections=document.getElementById('f-add-inspections').checked,canCreateTasks=document.getElementById('f-create-tasks').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
+  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,canAddInspections,canCreateTasks,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals,can_add_inspections:canAddInspections,can_create_tasks:canCreateTasks});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
 }
 async function saveCoinAdjustment(){
   const u=state.db.users.find(x=>x.id===state.userId), amount=Math.trunc(Number(document.getElementById('f-coin-amount')?.value||0)), taskId=document.getElementById('f-coin-task')?.value||null, description=document.getElementById('f-coin-desc')?.value.trim();
