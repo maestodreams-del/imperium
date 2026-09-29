@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, actionId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -33,7 +33,7 @@ function seed(){
     version:2,
     users:[
       {id:'u-admin',name:'Administrator',role:'admin',locationIds:['l1','l2','l3','l4','l5','l6'],active:true},
-      {id:'u-zenon',name:'Zenon',role:'worker',canManageRentals:true,canAddInspections:true,canCreateTasks:true,canViewTeamHours:true,locationIds:['l3','l4'],active:true},
+      {id:'u-zenon',name:'Zenon',role:'worker',canManageRentals:true,canAddInspections:true,canCreateTasks:true,canViewTeamHours:true,canViewImportant:true,locationIds:['l3','l4'],active:true},
       {id:'u-mikolaj',name:'Mikołaj',role:'worker',locationIds:['l1','l2','l5','l6'],active:true},
       {id:'u-nikolai',name:'Nikolai',role:'worker',locationIds:['l1','l2','l4'],active:true}
     ],
@@ -61,7 +61,7 @@ function seed(){
     attendance:[],
     shifts:[],
     inspections:[],
-    rentals:[],
+    rentals:[],rentalActions:[],importantAlerts:[],
     events:[
       {id:uid(),type:'system',text:'IMPERIUM uruchomione',userId:'u-admin',taskId:null,createdAt:new Date(t-12000000).toISOString()},
       {id:uid(),type:'claim',text:'Mikołaj przejął zadanie „Odczyt liczników”',userId:'u-mikolaj',taskId:'t2',createdAt:new Date(t-1600000).toISOString()},
@@ -77,7 +77,7 @@ function loadDemoDB(){
       x.disciplinaryRecords ||= [];
       x.coinTransactions ||= [];
       x.inspections ||= [];
-      x.rentals ||= [];
+      x.rentals ||= [];x.rentalActions ||= [];x.importantAlerts ||= [];
       x.vouchers ||= [];
       x.shifts ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
@@ -116,6 +116,7 @@ function canManageRentals(){ return isAdmin()||!!(currentUser()?.active&&current
 function canAddInspections(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canAddInspections); }
 function canCreateTasks(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canCreateTasks); }
 function canViewTeamHours(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canViewTeamHours); }
+function canViewImportant(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canViewImportant); }
 function allowedLocations(){ return isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser()?.locationIds.includes(l.id)); }
 function taskStatusLabel(s){ return ({open:'Nowe',in_progress:'W toku',review:'Do akceptacji',done:'Zakończone'}[s]||s); }
 function priorityLabel(p){ return ({normal:'Normalne',high:'Wysoki',urgent:'Pilne'}[p]||p); }
@@ -300,8 +301,9 @@ async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts]=await Promise.all([
-      pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,created_at&order=created_at.asc'),
+    if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts]=await Promise.all([
+      pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,can_view_important,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
       pgGet('tasks?select=*&order=created_at.desc'),
@@ -314,14 +316,19 @@ async function loadCloudDB({silent=false}={}){
       pgGet('inspections?select=*&order=valid_until.asc'),
       pgGet('rental_agreements?select=*&order=created_at.desc'),
       pgGet('coin_vouchers?select=*&order=redeemed_at.desc'),
-      pgGet('work_shifts?select=*&order=starts_at.asc')
+      pgGet('work_shifts?select=*&order=starts_at.asc'),
+      pgGet('rental_actions?select=*&order=due_on.asc'),
+      pgGet('important_alerts?select=*&resolved_at=is.null&order=due_on.asc')
     ]);
     state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at,startedBy:a.started_by,endedBy:a.ended_by}));
     state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
     state.rentals=(rentals||[]).map(mapRental);
+    state.rentalActions=(rentalActions||[]).map(x=>({id:x.id,rentalId:x.rental_id,kind:x.kind,dueOn:x.due_on,notes:x.notes||'',completedAt:x.completed_at}));
+    state.importantAlerts=(importantAlerts||[]).map(x=>({id:x.id,kind:x.kind,sourceId:x.source_id,dueOn:x.due_on,title:x.title,details:x.details,locationId:x.location_id,createdAt:x.created_at}));
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
     state.shifts=(shifts||[]).map(s=>({id:s.id,userId:s.profile_id,locationId:s.location_id,startsAt:s.starts_at,endsAt:s.ends_at}));
-    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,canAddInspections:!!p.can_add_inspections,canCreateTasks:!!p.can_create_tasks,canViewTeamHours:!!p.can_view_team_hours,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
+    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,canAddInspections:!!p.can_add_inspections,canCreateTasks:!!p.can_create_tasks,canViewTeamHours:!!p.can_view_team_hours,canViewImportant:!!p.can_view_important,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
+    deliverImportantAlerts();
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
     state.lastEventAt=newest; state.cloudError=''; state.loading=false;
@@ -387,6 +394,7 @@ function imperialIcon(id){
     locations:'<svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
     inspections:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="1"/><path d="M8 3v4M16 3v4M8 11h8M8 15h5"/></svg>',
     rentals:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/><path d="M16 17h2"/></svg>',
+    important:'<svg viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3zM12 9v5M12 17v1"/></svg>',
     activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
     chat:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h6"/></svg>',
@@ -413,16 +421,17 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
-  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];}
+  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
   if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
+  if(!canViewImportant()&&state.tab==='important')state.tab='tasks';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app aureus-shell">
   <header class="topbar"><div class="topbar-inner">
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${canViewImportant()?nav('important',`Ważne${state.importantAlerts.length?' ('+state.importantAlerts.length+')':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   bind();
 }
@@ -561,6 +570,7 @@ function renderInspectionsPage(){
 }
 const rentMoney=n=>new Intl.NumberFormat('pl-PL',{style:'currency',currency:'PLN'}).format(Number(n)||0);
 const rentalPaymentLabel=s=>({reliable:'Rzetelny płatnik',monitor:'Pod kontrolą',problematic:'Problematyczny'}[s]||'Nie oznaczono');
+const rentalActionLabel=kind=>({cesja:'Cesja',aneks:'Aneks',wypowiedzenie:'Wypowiedzenie'}[kind]||kind);
 function rentalTotals(r){return {net:r.areaSqm*r.priceSqmNet+r.parkingNet+r.internetNet,gross:r.areaSqm*r.priceSqmGross+r.parkingGross+r.internetGross};}
 function renderRentalsPage(){
   if(!canManageRentals())return '';
@@ -577,7 +587,7 @@ function renderRentalsPage(){
   <div class="rental-payment ${esc(r.paymentStatus||'unmarked')}">${rentalPaymentLabel(r.paymentStatus)}</div>
   <div class="rental-prices"><div><small>Czynsz za m²</small><b>${rentMoney(r.priceSqmNet)} netto</b><span>${rentMoney(r.priceSqmGross)} brutto</span></div><div><small>Parking</small><b>${rentMoney(r.parkingNet)} netto</b><span>${rentMoney(r.parkingGross)} brutto</span></div><div><small>Internet</small><b>${rentMoney(r.internetNet)} netto</b><span>${rentMoney(r.internetGross)} brutto</span></div></div>
   <div class="rental-total"><span>Miesięcznie łącznie</span><strong>${rentMoney(total.net)} netto<br>${rentMoney(total.gross)} brutto</strong></div>
-  <div class="rental-contact">${r.phone?`<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:''}</div></article>`}).join('')||'<div class="empty">Brak umów dla tego obiektu.</div>'}</div>`;
+  <div class="rental-contact">${r.phone?`<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:''}</div><div class="rental-actions"><div class="subheading">Planowane dokumenty</div>${state.rentalActions.filter(a=>a.rentalId===r.id).map(a=>`<div class="rental-action"><span>${esc(rentalActionLabel(a.kind))} · ${esc(a.dueOn)}${a.completedAt?' · GOTOWE':''}</span>${!a.completedAt?`<button class="smallbtn" data-edit-rental-action="${esc(a.id)}">Edytuj</button>`:''}</div>`).join('')||'<small class="subtle">Brak zaplanowanych dokumentów.</small>'}<button class="smallbtn gold" data-add-rental-action="${esc(r.id)}">+ Cesja / aneks / wypowiedzenie</button></div></article>`}).join('')||'<div class="empty">Brak umów dla tego obiektu.</div>'}</div>`;
 }
 function renderLocationsPage(){
   const visible=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
@@ -666,7 +676,7 @@ async function adminStopAttendance(userId){
 }
 function renderActivityPage(){return `<div class="toolbar"><div><div class="eyebrow">Dziennik</div><h2 class="section-title">Aktywność</h2></div></div><div class="settings-card">${state.db.events.slice(0,100).map(e=>`<div class="activity"><p>${esc(e.text)}</p><small>${fmtDate(e.createdAt)}</small></div>`).join('')||'<div class="empty">Brak zdarzeń.</div>'}</div>`;}
 function renderTeamPage(){
-  return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()?`<div class="voucher-exchange"><div class="eyebrow">KONTROLA VOUCHERÓW</div><h3>Aktywne i do wypłaty</h3><div class="voucher-list">${voucherRows().filter(v=>voucherState(v)==='Aktywny'||voucherState(v)==='Do wypłaty').map(v=>voucherCard(v,true)).join('')||'<div class="empty compact">Brak aktywnych voucherów i premii do wypłaty.</div>'}</div></div>`:''}${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Nowy pracownik instaluje ten sam APK i wybiera „Utwórz konto pracownika”. Potem tutaj przypisujesz mu obiekty i możesz otworzyć jego kartę pracy.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>${u.role==='admin'?'Administrator':'Pracownik'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions">${isAdmin()||u.id===currentUser().id?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
+  return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()?`<div class="voucher-exchange"><div class="eyebrow">KONTROLA VOUCHERÓW</div><h3>Aktywne i do wypłaty</h3><div class="voucher-list">${voucherRows().filter(v=>voucherState(v)==='Aktywny'||voucherState(v)==='Do wypłaty').map(v=>voucherCard(v,true)).join('')||'<div class="empty compact">Brak aktywnych voucherów i premii do wypłaty.</div>'}</div></div>`:''}${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Nowy pracownik instaluje ten sam APK i wybiera „Utwórz konto pracownika”. Potem tutaj przypisujesz mu obiekty i możesz otworzyć jego kartę pracy.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>${u.role==='admin'?'Administrator':'Pracownik'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions">${isAdmin()||u.id===currentUser().id||canViewTeamHours()&&u.locationIds.some(id=>currentUser().locationIds.includes(id))?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
 }
 function taskProgressStats(userId){
   const all=state.db.tasks||[], mine=all.filter(t=>t.claimedBy===userId||t.assignedTo===userId);
@@ -678,7 +688,8 @@ function renderProgressBar(label,done,total,pct,extra=''){
 }
 function renderProfilePage(){
   const u=currentUser(), ps=taskProgressStats(u.id), all=state.db.tasks||[], allDone=all.filter(t=>t.status==='done').length, allPct=all.length?Math.round(allDone/all.length*100):0;
-  const active=ps.mine.filter(t=>t.status!=='done').sort((a,b)=>new Date(a.deadlineAt||a.createdAt)-new Date(b.deadlineAt||b.createdAt));
+  const active=ps.mine.filter(t=>t.status!=='done'&&!(t.status==='open'&&t.scheduledStart&&new Date(t.scheduledStart)>new Date()&&t.assignedTo===u.id)).sort((a,b)=>new Date(a.deadlineAt||a.createdAt)-new Date(b.deadlineAt||b.createdAt));
+  const planned=ps.mine.filter(t=>t.status==='open'&&t.scheduledStart&&new Date(t.scheduledStart)>new Date()&&t.assignedTo===u.id).sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
   const completed=ps.mine.filter(t=>t.status==='done').slice().sort((a,b)=>new Date(b.completedAt||b.createdAt)-new Date(a.completedAt||a.createdAt)).slice(0,5);
   return `<section class="profile-page">
     ${canViewTeamHours()?`<div class="profile-tabs"><button class="smallbtn ${state.profileView==='mine'?'gold':''}" data-profile-view="mine">Mój profil</button><button class="smallbtn ${state.profileView==='team'?'gold':''}" data-profile-view="team">Obiekty i zespół</button></div>`:''}
@@ -687,6 +698,7 @@ function renderProfilePage(){
     <div class="settings-card shift-list"><div class="subheading">Mój grafik pracy</div>${shiftsFor(u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,20).map(s=>`<div class="shift-row"><div><b>${esc(getLoc(s.locationId)?.name||'Obiekt')}</b><small>${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div></div>`).join('')||'<div class="empty compact">Administrator nie dodał jeszcze zmian.</div>'}</div>
     <div class="voucher-exchange"><div class="eyebrow">WYMIANA NK</div><h3>Imperatorski wymiennik</h3><div class="voucher-options"><label><input type="radio" name="voucher-kind" value="hours_2" checked> 1000 NK · 2 godziny</label><label><input type="radio" name="voucher-kind" value="hours_4"> 2000 NK · 4 godziny</label><label><input type="radio" name="voucher-kind" value="day"> 5000 NK · dzień wolny</label><label><input type="radio" name="voucher-kind" value="bonus_500"> 7500 NK · premia 500 zł</label></div><div class="field" id="voucher-time-field"><label>Początek wolnego (data i godzina)</label><input type="datetime-local" id="voucher-start"></div><div class="field" id="voucher-day-field" hidden><label>Dzień wolny</label><input type="date" id="voucher-day"></div><p class="subtle">Godziny wolnego muszą mieścić się w zapisanej zmianie, a dzień wolny wymaga zmiany w tym dniu. Punkty są pobierane przy wymianie. Premia tworzy wniosek widoczny dla administratora; wypłata jest potwierdzana osobno.</p><button class="goldbtn" id="redeem-voucher">Wymień Nikitocoiny</button></div>
     <div class="profile-section-head compact"><div><div class="eyebrow">MOJE KORZYŚCI</div><h3>Vouchery</h3></div></div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v)).join('')||'<div class="empty compact">Nie masz jeszcze voucherów.</div>'}</div>
+    <div class="profile-section-head"><div><div class="eyebrow">PLAN</div><h3>Zaplanowane zadania</h3></div><span>${planned.length} ZAPLANOWANE</span></div><div class="profile-missions">${planned.map(t=>taskCard(t,u)).join('')||'<div class="empty compact">Brak zaplanowanych zadań.</div>'}</div>
     <div class="profile-section-head"><div><div class="eyebrow">PRZYDZIAŁ</div><h3>Moje zadania</h3></div><span>${active.length} AKTYWNE</span></div>
     <div class="profile-missions">${active.length?active.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak aktywnych zadań.</div>'}</div>
     <div class="profile-section-head compact"><div><div class="eyebrow">ARCHIWUM</div><h3>Ostatnio wykonane</h3></div></div>
@@ -740,6 +752,70 @@ function renderTeamHoursPage(){
   ${loaded?selected.map(worker=>{const own=rows.filter(a=>a.userId===worker.id),totals=teamDailyHours(own,month),planned=teamDailyHours(shiftsFor(worker.id).filter(x=>locationIds.has(x.locationId)).map(x=>({startedAt:x.startsAt,endedAt:x.endsAt})),month),sum=Object.values(totals).reduce((a,b)=>a+b,0);return `<div class="settings-card team-calendar-card"><div class="subheading">${esc(worker.name)} · ${teamHours(sum)} godz.</div><div class="team-calendar">${['Pn','Wt','Śr','Cz','Pt','So','Nd'].map(x=>`<span class="team-weekday">${x}</span>`).join('')}${Array.from({length:(first+6)%7},()=>'<span></span>').join('')}${Array.from({length:days},(_,n)=>{const day=String(n+1).padStart(2,'0'),key=`${month}-${day}`,hours=totals[key]||0;return `<div class="team-day ${key===today?'today':''} ${hours?'worked':''}"><b>${n+1}</b><small>${hours?teamHours(hours)+' h':'—'}${planned[key]?`<span>plan ${teamHours(planned[key])} h</span>`:''}</small></div>`;}).join('')}</div></div>`;}).join(''):''}</div>`;
 }
 
+function renderWorkerPlans(u){
+  const locations=new Set(isAdmin()?state.db.locations.map(l=>l.id):currentUser().locationIds);
+  const tasks=state.db.tasks.filter(t=>t.assignedTo===u.id&&t.scheduledStart&&t.status!=='done'&&locations.has(t.locationId))
+    .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
+  return `<div class="settings-card worker-plans"><div class="subheading">Planowane zadania · ${esc(u.name)}</div>${tasks.map(t=>`<button class="history-row" data-history-task="${esc(t.id)}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'Obiekt')} · ${fmtDate(t.scheduledStart)} → ${fmtDate(t.scheduledEnd)}</small></span><em>${taskStatusLabel(t.status)}</em></button>`).join('')||'<div class="empty compact">Brak planowanych zadań.</div>'}</div>`;
+}
+function renderImportantPage(){
+  if(!canViewImportant())return '';
+  const alerts=state.importantAlerts||[];
+  return `<div class="toolbar"><div><div class="eyebrow">PILNE TERMINY</div><h2 class="section-title">Ważne</h2></div><span class="badge">${alerts.length} aktywne</span></div><div class="status-note">Przypomnienia pozostają tutaj do oznaczenia jako wykonane. Daty dotyczą obiektów, do których masz dostęp.</div><div class="important-list">${alerts.map(a=>`<article class="settings-card important-card"><div><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} · termin ${esc(a.dueOn)}</small><h3>${esc(a.title)}</h3>${a.details?`<p>${esc(a.details)}</p>`:''}</div><button class="smallbtn gold" data-complete-alert="${esc(a.id)}">Wykonane</button></article>`).join('')||'<div class="empty">Nie ma aktywnych przypomnień.</div>'}</div>`;
+}
+function deliverImportantAlerts(){
+  const id=state.auth?.user?.id;if(!id||!state.importantAlerts.length)return;
+  const key=`imperium_important_delivered_${id}`;
+  let seen=[];try{seen=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){}
+  const fresh=state.importantAlerts.filter(a=>!seen.includes(a.id));
+  if(!fresh.length)return;
+  localStorage.setItem(key,JSON.stringify([...new Set([...seen,...fresh.map(a=>a.id)])].slice(-500)));
+  notify('IMPERIUM · Ważne',fresh.length===1?fresh[0].title:`${fresh.length} ważnych terminów. Otwórz zakładkę Ważne.`);
+}
+function demoImportantAlerts(){
+  if(!canViewImportant())return [];
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'});
+  const days=(date)=>Math.floor((Date.parse(date+'T12:00:00Z')-Date.parse(today+'T12:00:00Z'))/86400000);
+  const resolved=new Set(state.db.importantAlerts||[]),out=[];
+  const add=(kind,sourceId,dueOn,title,details,locationId,limit)=>{if(!dueOn||days(dueOn)>limit||days(dueOn)<-30)return;const id=`${kind}:${sourceId}:${dueOn}`;if(!resolved.has(id))out.push({id,kind,sourceId,dueOn,title,details,locationId});};
+  const visible=id=>isAdmin()||currentUser().locationIds.includes(id);
+  (state.rentals||[]).filter(r=>visible(r.locationId)&&!r.indefinite).forEach(r=>add('rental_expiry',r.id,r.endsOn,`Koniec umowy najmu: ${r.contractor}`,'',r.locationId,31));
+  (state.inspections||[]).filter(i=>visible(i.locationId)).forEach(i=>add('inspection_expiry',i.id,i.validUntil,`Koniec przeglądu: ${i.name}`,'',i.locationId,31));
+  (state.rentalActions||[]).filter(a=>!a.completedAt).forEach(a=>{const r=state.rentals.find(x=>x.id===a.rentalId);if(!r||!visible(r.locationId))return;add('action_14',a.id,a.dueOn,`Przygotuj ${rentalActionLabel(a.kind)}: ${r.contractor}`,a.notes,r.locationId,14);if(a.kind==='wypowiedzenie')add('notice_30',a.id,a.dueOn,`Wypowiedzenie za miesiąc: ${r.contractor}`,a.notes,r.locationId,31);});
+  return out.sort((a,b)=>a.dueOn.localeCompare(b.dueOn));
+}
+async function refreshImportantCloud(){
+  await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}});
+  await loadCloudDB({silent:true});
+}
+async function saveRentalAction(){
+  if(!canManageRentals())return;
+  const rental=state.rentals.find(r=>r.id===state.rentalId);
+  if(!rental||!isAdmin()&&!currentUser().locationIds.includes(rental.locationId))return toast('Brak dostępu do umowy.');
+  const kind=document.getElementById('f-action-kind').value,dueOn=document.getElementById('f-action-date').value,notes=document.getElementById('f-action-notes').value.trim();
+  if(!['cesja','aneks','wypowiedzenie'].includes(kind)||!dueOn)return toast('Wybierz dokument i datę.');
+  await withAction('Zapisywanie planu…',async()=>{
+    if(state.mode==='demo'){state.db.rentalActions ||= [];const a=state.db.rentalActions.find(x=>x.id===state.actionId);if(a)Object.assign(a,{kind,dueOn,notes});else state.db.rentalActions.push({id:uid(),rentalId:rental.id,kind,dueOn,notes,completedAt:null});state.rentalActions=state.db.rentalActions;saveDemoDB();}
+    else{const row={kind,due_on:dueOn,notes};if(state.actionId)await pgPatch('rental_actions',`id=eq.${encodeURIComponent(state.actionId)}`,row);else await pgPost('rental_actions',{...row,rental_id:rental.id,created_by:currentUser().id});await refreshImportantCloud();}
+    state.modal=null;state.actionId=null;state.rentalId=null;
+  });
+}
+async function completeRentalAction(){
+  if(!canManageRentals()||!state.actionId)return;
+  await withAction('Oznaczanie wykonania…',async()=>{
+    if(state.mode==='demo'){const a=state.db.rentalActions.find(x=>x.id===state.actionId);if(a)a.completedAt=nowISO();saveDemoDB();}
+    else{await pgPatch('rental_actions',`id=eq.${encodeURIComponent(state.actionId)}`,{completed_at:nowISO()});await refreshImportantCloud();}
+    state.modal=null;state.actionId=null;state.rentalId=null;
+  });
+}
+async function completeImportantAlert(id){
+  if(!canViewImportant())return;
+  await withAction('Zamykanie przypomnienia…',async()=>{
+    if(state.mode==='demo'){state.db.importantAlerts ||= [];state.db.importantAlerts.push(id);saveDemoDB();}
+    else{await cloudFetch('/rest/v1/rpc/complete_important_alert',{method:'POST',body:{p_id:id}});await loadCloudDB({silent:true});}
+  });
+}
+
 function renderSettingsPage(){
   const u=currentUser(),code=state.mode==='cloud'?configCode():'';
   return `<div class="toolbar"><div><div class="eyebrow">System</div><h2 class="section-title">Ustawienia</h2></div></div>
@@ -751,6 +827,7 @@ function renderSettingsPage(){
 
 function renderWorkerCard(){
   const u=state.db.users.find(x=>x.id===state.userId); if(!u)return '';
+  if(!isAdmin()&&u.id!==currentUser().id)return `<div class="modal-bg"><div class="modal worker-card-modal"><h2>Plan pracy · ${esc(u.name)}</h2>${renderWorkerPlans(u)}<div class="modal-actions"><button class="ghost" data-close>Zamknij</button></div></div></div>`;
   const st=workerStats(u.id), period=state.workerPeriod, balance=coinBalance(u.id);
   const tasks=[...st.tasks].sort((a,b)=>new Date(b.claimedAt||b.createdAt)-new Date(a.claimedAt||a.createdAt));
   const records=[...st.records].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
@@ -759,7 +836,7 @@ function renderWorkerCard(){
   const taskRows=tasks.map(t=>`<button class="history-row" data-history-task="${t.id}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'')} • ${fmtDate(t.claimedAt||t.createdAt)}</small></span><span class="history-right"><em class="${taskLate(t)?'late-text':''}">${taskLate(t)?'PO TERMINIE':taskStatusLabel(t.status)}</em>${t.rewardCoins?`<small class="coin-text">+${t.rewardCoins} NK</small>`:''}${t.reworkCount?`<small>${t.reworkCount}× poprawka</small>`:''}</span></button>`).join('')||'<div class="empty compact">Brak zadań w wybranym okresie.</div>';
   const recRows=records.map(r=>{const t=state.db.tasks.find(x=>x.id===r.taskId);return `<div class="discipline-entry ${r.type}"><div><b>${esc(disciplineLabel(r.type))}</b><small>${fmtDate(r.createdAt)}${t?` • ${esc(t.title)}`:''}</small></div><p>${esc(r.description)}</p>${isAdmin()?`<button class="smallbtn" data-delete-discipline="${r.id}">Usuń wpis</button>`:''}</div>`}).join('')||'<div class="empty compact">Brak uwag i sankcji w wybranym okresie.</div>';
   const coinRows=coins.map(c=>{const t=state.db.tasks.find(x=>x.id===c.taskId);return `<div class="coin-entry ${c.amount<0?'negative':'positive'}"><div><b>${fmtCoins(c.amount)}</b><span>${esc(coinKindLabel(c.kind))}</span></div><p>${esc(c.description||'Bez opisu')}</p><small>${fmtDate(c.createdAt)}${t?` • ${esc(t.title)}`:''}</small></div>`}).join('')||'<div class="empty compact">Brak operacji Nikitocoinów w wybranym okresie.</div>';
-  return `<div class="modal-bg"><div class="modal worker-card-modal"><div class="worker-card-head"><div class="avatar big">${initials(u.name)}</div><div><h2>${esc(u.name)}</h2><div class="modal-sub">${u.role==='admin'?'Administrator':'Pracownik'} • ${u.active?'aktywny':'nieaktywny'}</div></div><div class="coin-wallet"><small>IMPERATORSKIE NIKITOCOINY</small><b>🪙 ${balance} NK</b></div></div><div class="period-tabs"><button class="chip ${period==='30'?'active':''}" data-worker-period="30">30 dni</button><button class="chip ${period==='90'?'active':''}" data-worker-period="90">90 dni</button><button class="chip ${period==='365'?'active':''}" data-worker-period="365">Rok</button><button class="chip ${period==='all'?'active':''}" data-worker-period="all">Wszystko</button></div><div class="worker-stats"><div><b>${st.done}</b><span>Wykonane</span></div><div><b>${st.active}</b><span>Aktywne</span></div><div class="${st.late?'bad-stat':''}"><b>${st.late}</b><span>Po terminie</span></div><div><b>${st.reworks}</b><span>Do poprawy</span></div><div><b>${st.notes}</b><span>Uwagi</span></div><div class="${st.warnings+st.reprimands?'bad-stat':''}"><b>${st.warnings+st.reprimands}</b><span>Ostrz./upomn.</span></div></div><div class="performance-line"><span>Realizacja zakończonych</span><b>${completion}%</b></div><div class="section-split"><div><div class="subheading">Historia zadań</div>${taskRows}</div><div><div class="subheading">Uwagi i sankcje</div>${recRows}</div></div><div class="subheading" style="margin-top:16px">Vouchery</div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v,isAdmin())).join('')||'<div class="empty compact">Brak voucherów.</div>'}</div><div class="subheading" style="margin-top:16px">Portfel Nikitocoinów</div><div class="coin-ledger">${coinRows}</div><div class="status-note">Nikitocoiny są wewnętrznymi punktami IMPERIUM i nie stanowią automatycznego potrącenia ani składnika wynagrodzenia.</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button>${isAdmin()?'<button class="ghost" id="adjust-coins">± Nikitocoiny</button><button class="goldbtn" id="add-discipline">+ Dodaj uwagę / sankcję</button>':''}</div></div></div>`;
+  return `<div class="modal-bg"><div class="modal worker-card-modal"><div class="worker-card-head"><div class="avatar big">${initials(u.name)}</div><div><h2>${esc(u.name)}</h2><div class="modal-sub">${u.role==='admin'?'Administrator':'Pracownik'} • ${u.active?'aktywny':'nieaktywny'}</div></div><div class="coin-wallet"><small>IMPERATORSKIE NIKITOCOINY</small><b>🪙 ${balance} NK</b></div></div><div class="period-tabs"><button class="chip ${period==='30'?'active':''}" data-worker-period="30">30 dni</button><button class="chip ${period==='90'?'active':''}" data-worker-period="90">90 dni</button><button class="chip ${period==='365'?'active':''}" data-worker-period="365">Rok</button><button class="chip ${period==='all'?'active':''}" data-worker-period="all">Wszystko</button></div><div class="worker-stats"><div><b>${st.done}</b><span>Wykonane</span></div><div><b>${st.active}</b><span>Aktywne</span></div><div class="${st.late?'bad-stat':''}"><b>${st.late}</b><span>Po terminie</span></div><div><b>${st.reworks}</b><span>Do poprawy</span></div><div><b>${st.notes}</b><span>Uwagi</span></div><div class="${st.warnings+st.reprimands?'bad-stat':''}"><b>${st.warnings+st.reprimands}</b><span>Ostrz./upomn.</span></div></div><div class="performance-line"><span>Realizacja zakończonych</span><b>${completion}%</b></div>${renderWorkerPlans(u)}<div class="section-split"><div><div class="subheading">Historia zadań</div>${taskRows}</div><div><div class="subheading">Uwagi i sankcje</div>${recRows}</div></div><div class="subheading" style="margin-top:16px">Vouchery</div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v,isAdmin())).join('')||'<div class="empty compact">Brak voucherów.</div>'}</div><div class="subheading" style="margin-top:16px">Portfel Nikitocoinów</div><div class="coin-ledger">${coinRows}</div><div class="status-note">Nikitocoiny są wewnętrznymi punktami IMPERIUM i nie stanowią automatycznego potrącenia ani składnika wynagrodzenia.</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button>${isAdmin()?'<button class="ghost" id="adjust-coins">± Nikitocoiny</button><button class="goldbtn" id="add-discipline">+ Dodaj uwagę / sankcję</button>':''}</div></div></div>`;
 }
 function renderDisciplineModal(){
   const u=state.db.users.find(x=>x.id===state.userId); if(!u)return '';
@@ -788,6 +865,7 @@ function renderModal(){
   if(state.modal==='addDiscipline')return renderDisciplineModal();
   if(state.modal==='coinAdjust')return renderCoinModal();
   const close='<button class="ghost" data-close>Anuluj</button>';
+  if(state.modal==='rentalAction'){const a=state.rentalActions.find(x=>x.id===state.actionId);return `<div class="modal-bg"><div class="modal"><h2>${a?'Edytuj plan':'Zaplanuj dokument'}</h2><div class="field"><label>Dokument</label><select id="f-action-kind"><option value="cesja" ${a?.kind==='cesja'?'selected':''}>Cesja</option><option value="aneks" ${a?.kind==='aneks'?'selected':''}>Aneks</option><option value="wypowiedzenie" ${a?.kind==='wypowiedzenie'?'selected':''}>Wypowiedzenie</option></select></div><div class="field"><label>Termin przygotowania</label><input id="f-action-date" type="date" value="${esc(a?.dueOn||'')}"></div><div class="field"><label>Uwagi</label><textarea id="f-action-notes" maxlength="1000">${esc(a?.notes||'')}</textarea></div><div class="modal-actions">${a&&!a.completedAt?'<button class="ghost" id="complete-rental-action">Wykonane</button>':''}${close}<button class="goldbtn" id="save-rental-action">Zapisz</button></div></div></div>`;}
   if(state.modal==='newRental'||state.modal==='editRental'){
     const edit=state.modal==='editRental',r=edit?state.rentals.find(x=>x.id===state.rentalId):null;
     if(edit&&!r)return '';
@@ -826,7 +904,7 @@ function renderModal(){
   if(state.modal==='newUser')return `<div class="modal-bg"><div class="modal"><h2>Nowy pracownik demo</h2><div class="field"><label>Imię / nazwa</label><input id="f-username"></div><div class="field"><label>Obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}"> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user">Dodaj</button></div></div></div>`;
   if(state.modal==='editUser'){
     const u=state.db.users.find(x=>x.id===state.userId);
-    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><label class="checkrow"><input id="f-add-inspections" type="checkbox" ${u.canAddInspections?'checked':''}> Może dodawać przeglądy w przypisanych obiektach</label><label class="checkrow"><input id="f-create-tasks" type="checkbox" ${u.canCreateTasks?'checked':''}> Może dodawać zadania w przypisanych obiektach</label><label class="checkrow"><input id="f-view-team-hours" type="checkbox" ${u.canViewTeamHours?'checked':''}> Może widzieć czas pracy i wykonane zadania w przypisanych obiektach</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
+    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><label class="checkrow"><input id="f-add-inspections" type="checkbox" ${u.canAddInspections?'checked':''}> Może dodawać przeglądy w przypisanych obiektach</label><label class="checkrow"><input id="f-create-tasks" type="checkbox" ${u.canCreateTasks?'checked':''}> Może dodawać zadania w przypisanych obiektach</label><label class="checkrow"><input id="f-view-team-hours" type="checkbox" ${u.canViewTeamHours?'checked':''}> Może widzieć czas pracy i wykonane zadania w przypisanych obiektach</label><label class="checkrow"><input id="f-view-important" type="checkbox" ${u.canViewImportant?'checked':''}> Widzi ważne terminy swoich obiektów</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
   }
   return '';
 }
@@ -878,6 +956,11 @@ setTimeout(()=>{
   document.querySelectorAll('[data-rental-location]').forEach(b=>b.onclick=()=>{state.rentalLocationId=b.dataset.rentalLocation;render();});
   document.getElementById('add-rental')?.addEventListener('click',()=>{state.rentalId=null;state.modal='newRental';render();});
   document.querySelectorAll('[data-edit-rental]').forEach(b=>b.onclick=()=>{state.rentalId=b.dataset.editRental;state.modal='editRental';render();});
+  document.querySelectorAll('[data-add-rental-action]').forEach(b=>b.onclick=()=>{state.rentalId=b.dataset.addRentalAction;state.actionId=null;state.modal='rentalAction';render();});
+  document.querySelectorAll('[data-edit-rental-action]').forEach(b=>b.onclick=()=>{const a=state.rentalActions.find(x=>x.id===b.dataset.editRentalAction);state.rentalId=a?.rentalId;state.actionId=a?.id;state.modal='rentalAction';render();});
+  document.getElementById('save-rental-action')?.addEventListener('click',saveRentalAction);
+  document.getElementById('complete-rental-action')?.addEventListener('click',completeRentalAction);
+  document.querySelectorAll('[data-complete-alert]').forEach(b=>b.onclick=()=>completeImportantAlert(b.dataset.completeAlert));
   document.getElementById('save-rental')?.addEventListener('click',saveRental);
   document.getElementById('delete-rental')?.addEventListener('click',deleteRental);
   document.getElementById('f-rental-indefinite')?.addEventListener('change',e=>{document.getElementById('f-rental-end').disabled=e.target.checked;if(e.target.checked)document.getElementById('f-rental-end').value='';});
@@ -1087,7 +1170,7 @@ async function saveRental(){
     }else{
       const row={location_id:value.locationId,contractor:value.contractor,nip:value.nip,contact_person:value.contactPerson,phone:value.phone,email:value.email,premises_address:value.premisesAddress,premises_number:value.premisesNumber,payment_status:value.paymentStatus,starts_on:value.startsOn,ends_on:value.endsOn,indefinite:value.indefinite,area_sqm:value.areaSqm,price_sqm_net:value.priceSqmNet,price_sqm_gross:value.priceSqmGross,parking_net:value.parkingNet,parking_gross:value.parkingGross,internet_net:value.internetNet,internet_gross:value.internetGross};
       if(edit)await pgPatch('rental_agreements',`id=eq.${encodeURIComponent(id)}`,row);else await pgPost('rental_agreements',row);
-      await loadCloudDB({silent:true});
+      await refreshImportantCloud();
     }
     state.rentalLocationId=value.locationId;state.rentalId=null;state.modal=null;
   });
@@ -1097,7 +1180,7 @@ async function deleteRental(){
   const id=state.rentalId;
   await withAction('Usuwanie umowy…',async()=>{
     if(state.mode==='demo'){state.db.rentals=state.db.rentals.filter(r=>r.id!==id);saveDemoDB();state.rentals=state.db.rentals;}
-    else{await pgDelete('rental_agreements',`id=eq.${encodeURIComponent(id)}`);await loadCloudDB({silent:true});}
+    else{await pgDelete('rental_agreements',`id=eq.${encodeURIComponent(id)}`);await refreshImportantCloud();}
     state.rentalId=null;state.modal=null;
   });
 }
@@ -1119,7 +1202,7 @@ async function saveInspection(){
       const value={name,location_id:locationId,valid_until:validUntil,last_inspected:lastInspected,notes};
       if(edit)await pgPatch('inspections',`id=eq.${encodeURIComponent(id)}`,value);
       else await pgPost('inspections',{...value,created_by:currentUser().id});
-      await loadCloudDB({silent:true});
+      await refreshImportantCloud();
     }
     state.modal=null;state.inspectionId=null;
   });
@@ -1129,7 +1212,7 @@ async function deleteInspection(){
   const id=state.inspectionId;
   await withAction('Usuwanie przeglądu…',async()=>{
     if(state.mode==='demo'){state.db.inspections=state.db.inspections.filter(x=>x.id!==id);saveDemoDB();state.inspections=state.db.inspections;}
-    else{await pgDelete('inspections',`id=eq.${encodeURIComponent(id)}`);await loadCloudDB({silent:true});}
+    else{await pgDelete('inspections',`id=eq.${encodeURIComponent(id)}`);await refreshImportantCloud();}
     state.modal=null;state.inspectionId=null;
   });
 }
@@ -1139,8 +1222,8 @@ async function saveLocationFromForm(){
 }
 function addDemoUser(){const name=document.getElementById('f-username').value.trim();if(!name)return toast('Wpisz imię pracownika.');const locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);state.db.users.push({id:uid(),name,role:'worker',locationIds:locs,active:true});logEvent('user',`Dodano pracownika „${name}”`);saveDemoDB();state.modal=null;render();}
 async function saveUserEdit(){
-  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,canAddInspections=document.getElementById('f-add-inspections').checked,canCreateTasks=document.getElementById('f-create-tasks').checked,canViewTeamHours=document.getElementById('f-view-team-hours').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
-  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,canAddInspections,canCreateTasks,canViewTeamHours,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals,can_add_inspections:canAddInspections,can_create_tasks:canCreateTasks,can_view_team_hours:canViewTeamHours});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
+  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,canAddInspections=document.getElementById('f-add-inspections').checked,canCreateTasks=document.getElementById('f-create-tasks').checked,canViewTeamHours=document.getElementById('f-view-team-hours').checked,canViewImportant=document.getElementById('f-view-important').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
+  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,canAddInspections,canCreateTasks,canViewTeamHours,canViewImportant,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals,can_add_inspections:canAddInspections,can_create_tasks:canCreateTasks,can_view_team_hours:canViewTeamHours,can_view_important:canViewImportant});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
 }
 async function saveCoinAdjustment(){
   const u=state.db.users.find(x=>x.id===state.userId), amount=Math.trunc(Number(document.getElementById('f-coin-amount')?.value||0)), taskId=document.getElementById('f-coin-task')?.value||null, description=document.getElementById('f-coin-desc')?.value.trim();

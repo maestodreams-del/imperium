@@ -1443,3 +1443,12 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 .task-assignees{max-height:190px;overflow-y:auto;padding:8px;border:1px solid rgba(136,180,213,.2)}
 .task-actions button[disabled]{opacity:.5;cursor:not-allowed}
 .task-assignees [hidden]{display:none!important}
+.important-list{display:grid;gap:12px;margin-top:14px}
+.important-card{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.important-card h3{margin:5px 0;color:#b9d9e9;font-size:17px}
+.important-card small,.important-card p{color:#a9bbca}
+.important-card p{margin:5px 0 0}
+.rental-actions{border-top:1px solid rgba(136,180,213,.18);padding:12px 0;display:grid;gap:8px}
+.rental-action{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.worker-plans{margin:14px 0}
+@media(max-width:600px){.important-card{align-items:flex-start;flex-direction:column}.important-card button{align-self:flex-end}}
