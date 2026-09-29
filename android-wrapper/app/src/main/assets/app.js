@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], inspections: [], rentals: [], inspectionId: null, rentalId: null, rentalLocationId: null, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -57,6 +57,7 @@ function seed(){
       {id:'c-demo-1',userId:'u-mikolaj',taskId:null,kind:'adjustment',amount:100,description:'Premia startowa IMPERIUM',createdBy:'u-admin',createdAt:new Date(t-4000000).toISOString()},
       {id:'c-demo-2',userId:'u-zenon',taskId:null,kind:'adjustment',amount:60,description:'Premia za wzorową pracę',createdBy:'u-admin',createdAt:new Date(t-3000000).toISOString()}
     ],
+    vouchers:[],
     attendance:[],
     inspections:[],
     rentals:[],
@@ -76,6 +77,7 @@ function loadDemoDB(){
       x.coinTransactions ||= [];
       x.inspections ||= [];
       x.rentals ||= [];
+      x.vouchers ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
       return x;
     }
@@ -112,7 +114,50 @@ function taskStatusLabel(s){ return ({open:'Nowe',in_progress:'W toku',review:'D
 function priorityLabel(p){ return ({normal:'Normalne',high:'Wysoki',urgent:'Pilne'}[p]||p); }
 function sanctionLabel(s){ return ({none:'Brak',note:'Uwaga',warning:'Ostrzeżenie',reprimand:'Upomnienie',other:'Inna sankcja'}[s]||s||'Brak'); }
 function disciplineLabel(s){ return ({note:'Uwaga',warning:'Ostrzeżenie',reprimand:'Upomnienie',other:'Inna'}[s]||s||'Wpis'); }
-function coinKindLabel(k){ return ({task_reward:'Nagroda za zadanie',task_bonus:'Bonus za wykonanie',task_penalty:'Niewykonanie zadania',adjustment:'Korekta administratora'}[k]||k||'Nikitocoiny'); }
+function coinKindLabel(k){ return ({task_reward:'Nagroda za zadanie',task_bonus:'Bonus za wykonanie',task_penalty:'Niewykonanie zadania',adjustment:'Korekta administratora',voucher_redemption:'Wymiana na voucher'}[k]||k||'Nikitocoiny'); }
+function voucherLabel(k){return ({hours_2:'2 godziny wolnego',hours_4:'4 godziny wolnego',day:'Dzień wolny',bonus_500:'Premia 500 zł'}[k]||k);}
+function voucherState(v){if(v.kind==='bonus_500')return v.status==='paid'?'Wypłacono':'Do wypłaty';return Date.now()<new Date(v.startsAt)?'Zaplanowany':Date.now()<new Date(v.endsAt)?'Aktywny':'Zakończony';}
+function voucherRows(userId){return (state.mode==='demo'?state.db?.vouchers:state.vouchers||[]).filter(v=>!userId||v.userId===userId).sort((a,b)=>new Date(b.redeemedAt)-new Date(a.redeemedAt));}
+function voucherCard(v,admin=false){const s=voucherState(v),period=v.kind==='bonus_500'?'Premia do realizacji przez administratora':`${fmtDate(v.startsAt)} – ${fmtDate(v.endsAt)}`;return `<div class="voucher-card"><div><b>${esc(voucherLabel(v.kind))}</b><span class="voucher-state" data-voucher-state="${esc(v.startsAt||'')}|${esc(v.endsAt||'')}">${s}</span></div>${admin?`<small>${esc(getUser(v.userId)?.name||'Pracownik')}</small>`:''}<small>${period}</small>${v.kind!=='bonus_500'?`<strong data-voucher-until="${esc(v.endsAt)}" data-voucher-start="${esc(v.startsAt)}"></strong>`:''}${v.kind==='bonus_500'&&s==='Do wypłaty'&&admin?`<button class="smallbtn gold" data-voucher-paid="${v.id}">Oznacz jako wypłacone</button>`:''}</div>`;}
+async function redeemVoucher(){
+  const kind=document.querySelector('input[name="voucher-kind"]:checked')?.value;
+  const cost={hours_2:1000,hours_4:2000,day:5000,bonus_500:7500}[kind];
+  if(!cost||coinBalance(currentUser().id)<cost)return toast('Brak wystarczającej liczby Nikitocoinów.');
+  let start=null,end=null;
+  if(kind==='day'){
+    const date=document.getElementById('voucher-day')?.value;
+    if(!date)return toast('Wybierz dzień wolny.');
+    start=new Date(`${date}T00:00:00`);
+    end=new Date(start);end.setDate(end.getDate()+1);
+  }else if(kind!=='bonus_500'){
+    const value=document.getElementById('voucher-start')?.value;
+    if(!value)return toast('Wybierz początek wolnego.');
+    start=new Date(value);end=new Date(start.getTime()+(kind==='hours_2'?2:4)*3600000);
+  }
+  if(start&&(!Number.isFinite(start.getTime())||start<=new Date()||start>new Date(Date.now()+90*86400000)))return toast('Wybierz przyszły termin (maksymalnie 90 dni).');
+  if(start&&voucherRows(currentUser().id).some(v=>v.startsAt&&new Date(v.startsAt)<end&&new Date(v.endsAt)>start))return toast('Ten termin pokrywa się z innym voucherem.');
+  await withAction('Wymiana Nikitocoinów…',async()=>{
+    if(state.mode==='demo'){
+      const userId=currentUser().id;
+      state.db.vouchers.push({id:uid(),userId,kind,cost,startsAt:start?.toISOString()||null,endsAt:end?.toISOString()||null,status:'issued',redeemedAt:nowISO()});
+      state.db.coinTransactions.unshift({id:uid(),userId,kind:'voucher_redemption',amount:-cost,description:voucherLabel(kind),createdBy:userId,createdAt:nowISO()});
+      saveDemoDB();
+    }else{
+      await cloudFetch('/rest/v1/rpc/redeem_coin_voucher',{method:'POST',body:{p_kind:kind,p_start:start?.toISOString()||null,p_end:end?.toISOString()||null}});
+      await loadCloudDB({silent:true});
+    }
+    toast('Voucher dodany do profilu.');
+    render();
+  });
+}
+async function markVoucherPaid(id){
+  if(!isAdmin())return;
+  await withAction('Potwierdzanie wypłaty…',async()=>{
+    if(state.mode==='demo'){const v=state.db.vouchers.find(x=>x.id===id&&x.kind==='bonus_500'&&x.status==='issued');if(!v)throw Error('Voucher nie jest oczekujący.');v.status='paid';saveDemoDB();}
+    else{await cloudFetch('/rest/v1/rpc/mark_voucher_paid',{method:'POST',body:{p_id:id}});await loadCloudDB({silent:true});}
+    render();
+  });
+}
 function coinBalance(userId){ return (state.db?.coinTransactions||[]).filter(x=>x.userId===userId).reduce((n,x)=>n+Number(x.amount||0),0); }
 function coinTxFor(userId,period=state.workerPeriod){ return (state.db?.coinTransactions||[]).filter(x=>x.userId===userId&&inPeriod(x.createdAt,period)); }
 function fmtCoins(n){ n=Number(n||0); return `${n>0?'+':''}${n} NK`; }
@@ -245,7 +290,7 @@ async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -257,11 +302,13 @@ async function loadCloudDB({silent=false}={}){
       pgGet('coin_transactions?select=*&order=created_at.desc'),
       pgGet('work_attendance?select=*&order=started_at.desc&limit=500').catch(()=>[]),
       pgGet('inspections?select=*&order=valid_until.asc'),
-      pgGet('rental_agreements?select=*&order=created_at.desc')
+      pgGet('rental_agreements?select=*&order=created_at.desc'),
+      pgGet('coin_vouchers?select=*&order=redeemed_at.desc')
     ]);
     state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at}));
     state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
     state.rentals=(rentals||[]).map(mapRental);
+    state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
     state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
@@ -554,7 +601,7 @@ async function stopAttendance(){
 }
 function renderActivityPage(){return `<div class="toolbar"><div><div class="eyebrow">Dziennik</div><h2 class="section-title">Aktywność</h2></div></div><div class="settings-card">${state.db.events.slice(0,100).map(e=>`<div class="activity"><p>${esc(e.text)}</p><small>${fmtDate(e.createdAt)}</small></div>`).join('')||'<div class="empty">Brak zdarzeń.</div>'}</div>`;}
 function renderTeamPage(){
-  return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Nowy pracownik instaluje ten sam APK i wybiera „Utwórz konto pracownika”. Potem tutaj przypisujesz mu obiekty i możesz otworzyć jego kartę pracy.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>${u.role==='admin'?'Administrator':'Pracownik'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions">${isAdmin()||u.id===currentUser().id?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
+  return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()?`<div class="voucher-exchange"><div class="eyebrow">KONTROLA VOUCHERÓW</div><h3>Aktywne i do wypłaty</h3><div class="voucher-list">${voucherRows().filter(v=>voucherState(v)==='Aktywny'||voucherState(v)==='Do wypłaty').map(v=>voucherCard(v,true)).join('')||'<div class="empty compact">Brak aktywnych voucherów i premii do wypłaty.</div>'}</div></div>`:''}${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Nowy pracownik instaluje ten sam APK i wybiera „Utwórz konto pracownika”. Potem tutaj przypisujesz mu obiekty i możesz otworzyć jego kartę pracy.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>${u.role==='admin'?'Administrator':'Pracownik'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions">${isAdmin()||u.id===currentUser().id?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
 }
 function taskProgressStats(userId){
   const all=state.db.tasks||[], mine=all.filter(t=>t.claimedBy===userId);
@@ -571,6 +618,8 @@ function renderProfilePage(){
   return `<section class="profile-page">
     <div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL COMMAND FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div><div class="profile-balance"><span>SALDO</span><b>${coinBalance(u.id)} NK</b></div></div>
     <div class="profile-progress-grid">${renderProgressBar('MOJA REALIZACJA',ps.done,ps.total,ps.pct,ps.active+' aktywnych')}${renderProgressBar('REALIZACJA IMPERIUM',allDone,all.length,allPct,'wszystkie zadania systemu')}</div>
+    <div class="voucher-exchange"><div class="eyebrow">WYMIANA NK</div><h3>Imperatorski wymiennik</h3><div class="voucher-options"><label><input type="radio" name="voucher-kind" value="hours_2" checked> 1000 NK · 2 godziny</label><label><input type="radio" name="voucher-kind" value="hours_4"> 2000 NK · 4 godziny</label><label><input type="radio" name="voucher-kind" value="day"> 5000 NK · dzień wolny</label><label><input type="radio" name="voucher-kind" value="bonus_500"> 7500 NK · premia 500 zł</label></div><div class="field" id="voucher-time-field"><label>Początek wolnego (data i godzina)</label><input type="datetime-local" id="voucher-start"></div><div class="field" id="voucher-day-field" hidden><label>Dzień wolny</label><input type="date" id="voucher-day"></div><p class="subtle">Terminy wolnego obowiązują według czasu polskiego. Punkty są pobierane przy wymianie. Premia tworzy wniosek widoczny dla administratora; wypłata jest potwierdzana osobno.</p><button class="goldbtn" id="redeem-voucher">Wymień Nikitocoiny</button></div>
+    <div class="profile-section-head compact"><div><div class="eyebrow">MOJE KORZYŚCI</div><h3>Vouchery</h3></div></div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v)).join('')||'<div class="empty compact">Nie masz jeszcze voucherów.</div>'}</div>
     <div class="profile-section-head"><div><div class="eyebrow">PRZYDZIAŁ</div><h3>Moje zadania</h3></div><span>${active.length} AKTYWNE</span></div>
     <div class="profile-missions">${active.length?active.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak aktywnych zadań.</div>'}</div>
     <div class="profile-section-head compact"><div><div class="eyebrow">ARCHIWUM</div><h3>Ostatnio wykonane</h3></div></div>
@@ -597,7 +646,7 @@ function renderWorkerCard(){
   const taskRows=tasks.map(t=>`<button class="history-row" data-history-task="${t.id}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'')} • ${fmtDate(t.claimedAt||t.createdAt)}</small></span><span class="history-right"><em class="${taskLate(t)?'late-text':''}">${taskLate(t)?'PO TERMINIE':taskStatusLabel(t.status)}</em>${t.rewardCoins?`<small class="coin-text">+${t.rewardCoins} NK</small>`:''}${t.reworkCount?`<small>${t.reworkCount}× poprawka</small>`:''}</span></button>`).join('')||'<div class="empty compact">Brak zadań w wybranym okresie.</div>';
   const recRows=records.map(r=>{const t=state.db.tasks.find(x=>x.id===r.taskId);return `<div class="discipline-entry ${r.type}"><div><b>${esc(disciplineLabel(r.type))}</b><small>${fmtDate(r.createdAt)}${t?` • ${esc(t.title)}`:''}</small></div><p>${esc(r.description)}</p>${isAdmin()?`<button class="smallbtn" data-delete-discipline="${r.id}">Usuń wpis</button>`:''}</div>`}).join('')||'<div class="empty compact">Brak uwag i sankcji w wybranym okresie.</div>';
   const coinRows=coins.map(c=>{const t=state.db.tasks.find(x=>x.id===c.taskId);return `<div class="coin-entry ${c.amount<0?'negative':'positive'}"><div><b>${fmtCoins(c.amount)}</b><span>${esc(coinKindLabel(c.kind))}</span></div><p>${esc(c.description||'Bez opisu')}</p><small>${fmtDate(c.createdAt)}${t?` • ${esc(t.title)}`:''}</small></div>`}).join('')||'<div class="empty compact">Brak operacji Nikitocoinów w wybranym okresie.</div>';
-  return `<div class="modal-bg"><div class="modal worker-card-modal"><div class="worker-card-head"><div class="avatar big">${initials(u.name)}</div><div><h2>${esc(u.name)}</h2><div class="modal-sub">${u.role==='admin'?'Administrator':'Pracownik'} • ${u.active?'aktywny':'nieaktywny'}</div></div><div class="coin-wallet"><small>IMPERATORSKIE NIKITOCOINY</small><b>🪙 ${balance} NK</b></div></div><div class="period-tabs"><button class="chip ${period==='30'?'active':''}" data-worker-period="30">30 dni</button><button class="chip ${period==='90'?'active':''}" data-worker-period="90">90 dni</button><button class="chip ${period==='365'?'active':''}" data-worker-period="365">Rok</button><button class="chip ${period==='all'?'active':''}" data-worker-period="all">Wszystko</button></div><div class="worker-stats"><div><b>${st.done}</b><span>Wykonane</span></div><div><b>${st.active}</b><span>Aktywne</span></div><div class="${st.late?'bad-stat':''}"><b>${st.late}</b><span>Po terminie</span></div><div><b>${st.reworks}</b><span>Do poprawy</span></div><div><b>${st.notes}</b><span>Uwagi</span></div><div class="${st.warnings+st.reprimands?'bad-stat':''}"><b>${st.warnings+st.reprimands}</b><span>Ostrz./upomn.</span></div></div><div class="performance-line"><span>Realizacja zakończonych</span><b>${completion}%</b></div><div class="section-split"><div><div class="subheading">Historia zadań</div>${taskRows}</div><div><div class="subheading">Uwagi i sankcje</div>${recRows}</div></div><div class="subheading" style="margin-top:16px">Portfel Nikitocoinów</div><div class="coin-ledger">${coinRows}</div><div class="status-note">Nikitocoiny są wewnętrznymi punktami IMPERIUM i nie stanowią automatycznego potrącenia ani składnika wynagrodzenia.</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button>${isAdmin()?'<button class="ghost" id="adjust-coins">± Nikitocoiny</button><button class="goldbtn" id="add-discipline">+ Dodaj uwagę / sankcję</button>':''}</div></div></div>`;
+  return `<div class="modal-bg"><div class="modal worker-card-modal"><div class="worker-card-head"><div class="avatar big">${initials(u.name)}</div><div><h2>${esc(u.name)}</h2><div class="modal-sub">${u.role==='admin'?'Administrator':'Pracownik'} • ${u.active?'aktywny':'nieaktywny'}</div></div><div class="coin-wallet"><small>IMPERATORSKIE NIKITOCOINY</small><b>🪙 ${balance} NK</b></div></div><div class="period-tabs"><button class="chip ${period==='30'?'active':''}" data-worker-period="30">30 dni</button><button class="chip ${period==='90'?'active':''}" data-worker-period="90">90 dni</button><button class="chip ${period==='365'?'active':''}" data-worker-period="365">Rok</button><button class="chip ${period==='all'?'active':''}" data-worker-period="all">Wszystko</button></div><div class="worker-stats"><div><b>${st.done}</b><span>Wykonane</span></div><div><b>${st.active}</b><span>Aktywne</span></div><div class="${st.late?'bad-stat':''}"><b>${st.late}</b><span>Po terminie</span></div><div><b>${st.reworks}</b><span>Do poprawy</span></div><div><b>${st.notes}</b><span>Uwagi</span></div><div class="${st.warnings+st.reprimands?'bad-stat':''}"><b>${st.warnings+st.reprimands}</b><span>Ostrz./upomn.</span></div></div><div class="performance-line"><span>Realizacja zakończonych</span><b>${completion}%</b></div><div class="section-split"><div><div class="subheading">Historia zadań</div>${taskRows}</div><div><div class="subheading">Uwagi i sankcje</div>${recRows}</div></div><div class="subheading" style="margin-top:16px">Vouchery</div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v,isAdmin())).join('')||'<div class="empty compact">Brak voucherów.</div>'}</div><div class="subheading" style="margin-top:16px">Portfel Nikitocoinów</div><div class="coin-ledger">${coinRows}</div><div class="status-note">Nikitocoiny są wewnętrznymi punktami IMPERIUM i nie stanowią automatycznego potrącenia ani składnika wynagrodzenia.</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button>${isAdmin()?'<button class="ghost" id="adjust-coins">± Nikitocoiny</button><button class="goldbtn" id="add-discipline">+ Dodaj uwagę / sankcję</button>':''}</div></div></div>`;
 }
 function renderDisciplineModal(){
   const u=state.db.users.find(x=>x.id===state.userId); if(!u)return '';
@@ -717,6 +766,13 @@ setTimeout(()=>{
   document.querySelectorAll('[data-edit-location]').forEach(b=>b.onclick=()=>{state.locationId=b.dataset.editLocation;state.modal='editLocation';render();});
   document.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>{state.userId=b.dataset.editUser;state.modal='editUser';render();});
   document.querySelectorAll('[data-worker-card]').forEach(b=>b.onclick=()=>{state.userId=b.dataset.workerCard;state.workerPeriod='all';state.modal='workerCard';render();});
+  document.querySelectorAll('input[name="voucher-kind"]').forEach(b=>b.onchange=()=>{
+    const kind=document.querySelector('input[name="voucher-kind"]:checked')?.value;
+    document.getElementById('voucher-time-field').hidden=kind==='day'||kind==='bonus_500';
+    document.getElementById('voucher-day-field').hidden=kind!=='day';
+  });
+  document.getElementById('redeem-voucher')?.addEventListener('click',redeemVoucher);
+  document.querySelectorAll('[data-voucher-paid]').forEach(b=>b.onclick=()=>markVoucherPaid(b.dataset.voucherPaid));
   document.querySelectorAll('[data-worker-period]').forEach(b=>b.onclick=()=>{state.workerPeriod=b.dataset.workerPeriod;render();});
   document.querySelectorAll('[data-history-task]').forEach(b=>b.onclick=()=>{state.taskId=b.dataset.historyTask;state.modal='detail';render();});
   document.querySelectorAll('[data-delete-discipline]').forEach(b=>b.onclick=()=>deleteDiscipline(b.dataset.deleteDiscipline));
@@ -1021,6 +1077,7 @@ async function openAttachment(id){
   }
 }
 function updateTimers(){
+  document.querySelectorAll('[data-voucher-until]').forEach(el=>{const start=new Date(el.dataset.voucherStart)-Date.now(),left=new Date(el.dataset.voucherUntil)-Date.now();el.textContent=start>0?'Rozpocznie się za: '+duration(start):left>0?'Pozostało: '+duration(left):'Zakończony';const badge=el.parentElement.querySelector('.voucher-state');if(badge)badge.textContent=start>0?'Zaplanowany':left>0?'Aktywny':'Zakończony';});
   document.querySelectorAll('[data-inspection-until]').forEach(el=>{
     const c=inspectionCountdown(el.dataset.inspectionUntil);
     el.textContent=c.text;el.closest('.inspection-card')?.classList.toggle('expired',c.status==='expired');
