@@ -1415,3 +1415,9 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 .voucher-card strong{color:#98d7f5}
 .voucher-state{font-size:10px;white-space:nowrap;color:#acd6f7}
 @media(max-width:650px){.voucher-options{grid-template-columns:1fr}.voucher-card>div{flex-wrap:wrap}}
+.shift-admin,.shift-list{margin:14px 0}
+.shift-admin .formgrid{margin:12px 0}
+.shift-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid rgba(136,180,213,.18)}
+.shift-row:last-child{border-bottom:0}
+.shift-row b,.shift-row small{display:block}
+.shift-row small{margin-top:5px;color:#aabed3;line-height:1.4}

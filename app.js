@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -59,6 +59,7 @@ function seed(){
     ],
     vouchers:[],
     attendance:[],
+    shifts:[],
     inspections:[],
     rentals:[],
     events:[
@@ -78,6 +79,7 @@ function loadDemoDB(){
       x.inspections ||= [];
       x.rentals ||= [];
       x.vouchers ||= [];
+      x.shifts ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
       return x;
     }
@@ -118,6 +120,8 @@ function coinKindLabel(k){ return ({task_reward:'Nagroda za zadanie',task_bonus:
 function voucherLabel(k){return ({hours_2:'2 godziny wolnego',hours_4:'4 godziny wolnego',day:'Dzień wolny',bonus_500:'Premia 500 zł'}[k]||k);}
 function voucherState(v){if(v.kind==='bonus_500')return v.status==='paid'?'Wypłacono':'Do wypłaty';return Date.now()<new Date(v.startsAt)?'Zaplanowany':Date.now()<new Date(v.endsAt)?'Aktywny':'Zakończony';}
 function voucherRows(userId){return (state.mode==='demo'?state.db?.vouchers:state.vouchers||[]).filter(v=>!userId||v.userId===userId).sort((a,b)=>new Date(b.redeemedAt)-new Date(a.redeemedAt));}
+function shiftsFor(userId){return (state.mode==='demo'?state.db?.shifts:state.shifts||[]).filter(s=>!userId||s.userId===userId).sort((a,b)=>new Date(a.startsAt)-new Date(b.startsAt));}
+function shiftForVoucher(kind,start,end,userId){return kind==='bonus_500'||shiftsFor(userId).some(s=>kind==='day'?new Date(s.startsAt)>=start&&new Date(s.startsAt)<end:new Date(s.startsAt)<=start&&new Date(s.endsAt)>=end);}
 function voucherCard(v,admin=false){const s=voucherState(v),period=v.kind==='bonus_500'?'Premia do realizacji przez administratora':`${fmtDate(v.startsAt)} – ${fmtDate(v.endsAt)}`;return `<div class="voucher-card"><div><b>${esc(voucherLabel(v.kind))}</b><span class="voucher-state" data-voucher-state="${esc(v.startsAt||'')}|${esc(v.endsAt||'')}">${s}</span></div>${admin?`<small>${esc(getUser(v.userId)?.name||'Pracownik')}</small>`:''}<small>${period}</small>${v.kind!=='bonus_500'?`<strong data-voucher-until="${esc(v.endsAt)}" data-voucher-start="${esc(v.startsAt)}"></strong>`:''}${v.kind==='bonus_500'&&s==='Do wypłaty'&&admin?`<button class="smallbtn gold" data-voucher-paid="${v.id}">Oznacz jako wypłacone</button>`:''}</div>`;}
 async function redeemVoucher(){
   const kind=document.querySelector('input[name="voucher-kind"]:checked')?.value;
@@ -135,6 +139,7 @@ async function redeemVoucher(){
     start=new Date(value);end=new Date(start.getTime()+(kind==='hours_2'?2:4)*3600000);
   }
   if(start&&(!Number.isFinite(start.getTime())||start<=new Date()||start>new Date(Date.now()+90*86400000)))return toast('Wybierz przyszły termin (maksymalnie 90 dni).');
+  if(!shiftForVoucher(kind,start,end,currentUser().id))return toast('Wybierz termin zgodny z zapisanym grafikiem pracy.');
   if(start&&voucherRows(currentUser().id).some(v=>v.startsAt&&new Date(v.startsAt)<end&&new Date(v.endsAt)>start))return toast('Ten termin pokrywa się z innym voucherem.');
   await withAction('Wymiana Nikitocoinów…',async()=>{
     if(state.mode==='demo'){
@@ -290,7 +295,7 @@ async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -303,12 +308,14 @@ async function loadCloudDB({silent=false}={}){
       pgGet('work_attendance?select=*&order=started_at.desc&limit=500').catch(()=>[]),
       pgGet('inspections?select=*&order=valid_until.asc'),
       pgGet('rental_agreements?select=*&order=created_at.desc'),
-      pgGet('coin_vouchers?select=*&order=redeemed_at.desc')
+      pgGet('coin_vouchers?select=*&order=redeemed_at.desc'),
+      pgGet('work_shifts?select=*&order=starts_at.asc')
     ]);
-    state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at}));
+    state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at,startedBy:a.started_by,endedBy:a.ended_by}));
     state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
     state.rentals=(rentals||[]).map(mapRental);
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
+    state.shifts=(shifts||[]).map(s=>({id:s.id,userId:s.profile_id,locationId:s.location_id,startsAt:s.starts_at,endsAt:s.ends_at}));
     state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
@@ -316,7 +323,7 @@ async function loadCloudDB({silent=false}={}){
     if(!silent){
   checkImperiumUpdate().catch(()=>{});
 }
-    if(!silent || (!state.modal && state.tab!=='chat')) render();
+    if(!silent || (!state.modal && state.tab!=='chat' && !document.activeElement?.closest('.shift-admin'))) render();
     if(isAdmin() && state.db.locations.length===0){ try{await cloudFetch('/rest/v1/rpc/seed_default_locations',{method:'POST',body:{}});await sleep(300);return loadCloudDB({silent:false});}catch(e){} }
   }catch(e){ state.loading=false; state.cloudError=e.message; if(/sesja|JWT|token|expired/i.test(e.message)){localStorage.removeItem(AUTH_KEY);state.auth=null;} render(); }
 }
@@ -576,10 +583,14 @@ function renderAttendancePage(){
   const mineActive=active.find(a=>a.userId===u.id);
   const visibleLocs=isAdmin()?state.db.locations:state.db.locations.filter(l=>u.locationIds.includes(l.id));
   const history=(isAdmin()?rows:rows.filter(a=>a.userId===u.id)).slice(0,100);
+  const upcoming=shiftsFor(isAdmin()?null:u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,100);
+  const adminControls=isAdmin()?`<div class="settings-card shift-admin"><div class="subheading">Grafik pracowników</div><div class="formgrid"><div class="field"><label>Pracownik</label><select id="shift-worker">${state.db.users.filter(x=>x.active).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Obiekt</label><select id="shift-location">${state.db.locations.filter(x=>x.active).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Początek zmiany</label><input id="shift-start" type="datetime-local"></div><div class="field"><label>Koniec zmiany</label><input id="shift-end" type="datetime-local"></div></div><button class="goldbtn" id="shift-add">+ Dodaj zmianę</button></div><div class="settings-card shift-admin"><div class="subheading">Meldowanie pracownika przez administratora</div><div class="formgrid"><div class="field"><label>Pracownik</label><select id="admin-attendance-worker">${state.db.users.filter(x=>x.active&&x.id!==u.id).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div><div class="field"><label>Obiekt</label><select id="admin-attendance-location">${state.db.locations.filter(x=>x.active).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div></div><button class="goldbtn" id="admin-attendance-start">📍 Zamelduj pracownika</button></div>`:'';
   const checkin=`<div class="settings-card attendance-checkin"><div class="subheading">Twój meldunek</div>${mineActive?`<div class="attendance-active"><div><span class="attendance-dot"></span><b>${esc(getLoc(mineActive.locationId)?.name||'Obiekt')}</b><small>Praca rozpoczęta: ${fmtDate(mineActive.startedAt)}</small><strong data-attendance-start="${mineActive.startedAt}">${attendanceDuration(mineActive)}</strong></div><button class="dangerbtn" id="attendance-stop">Zakończ pracę</button></div>`:`<div class="field"><label>Obiekt</label><select id="attendance-location">${visibleLocs.filter(l=>l.active!==false).map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div><button class="goldbtn" id="attendance-start" ${visibleLocs.length?'':'disabled'}>📍 Zamelduj się</button>${visibleLocs.length?'':'<div class="status-note">Brak aktywnych obiektów dostępnych do meldunku.</div>'}`}</div>`;
   return `<section class="hero"><div class="hero-card"><div class="eyebrow">EWIDENCJA OBECNOŚCI</div><h2>📍 Meldunek na obiekcie</h2><p>${isAdmin()?'Zamelduj swoją obecność i sprawdź, kto aktualnie pracuje na obiektach.':'Zamelduj swoją obecność na obiekcie. IMPERIUM zapisze dokładny czas rozpoczęcia i zakończenia.'}</p></div></section>
   ${checkin}
-  ${isAdmin()?`<div class="settings-card"><div class="subheading">Kto jest teraz na obiekcie</div><div class="attendance-live">${active.length?active.map(a=>`<div class="attendance-live-row"><span class="attendance-dot"></span><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} • od ${fmtDate(a.startedAt)}</small></div><strong data-attendance-start="${a.startedAt}">${attendanceDuration(a)}</strong></div>`).join(''):'<div class="empty compact">Nikt nie jest teraz zameldowany.</div>'}</div></div>`:''}
+  ${adminControls}
+  <div class="settings-card shift-list"><div class="subheading">${isAdmin()?'Grafik zespołu':'Mój grafik'}</div>${upcoming.length?upcoming.map(s=>`<div class="shift-row"><div><b>${esc(getUser(s.userId)?.name||'Pracownik')}</b><small>${esc(getLoc(s.locationId)?.name||'Obiekt')} • ${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div>${isAdmin()?`<button class="smallbtn" data-shift-delete="${s.id}">Usuń</button>`:''}</div>`).join(''):'<div class="empty compact">Brak zaplanowanych zmian.</div>'}</div>
+  ${isAdmin()?`<div class="settings-card"><div class="subheading">Kto jest teraz na obiekcie</div><div class="attendance-live">${active.length?active.map(a=>`<div class="attendance-live-row"><span class="attendance-dot"></span><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} • od ${fmtDate(a.startedAt)}${a.startedBy?` • meldował: ${esc(getUser(a.startedBy)?.name||'Admin')}`:''}</small></div><strong data-attendance-start="${a.startedAt}">${attendanceDuration(a)}</strong>${a.userId!==u.id?`<button class="smallbtn" data-admin-attendance-stop="${a.userId}">Zakończ</button>`:''}</div>`).join(''):'<div class="empty compact">Nikt nie jest teraz zameldowany.</div>'}</div></div>`:''}
   <div class="toolbar"><div><div class="eyebrow">Dziennik pracy</div><h2 class="section-title">${isAdmin()?'Historia meldunków':'Moja historia'}</h2></div></div>
   <div class="settings-card attendance-history">${history.length?history.map(a=>`<div class="attendance-row"><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>⌖ ${esc(getLoc(a.locationId)?.name||'Obiekt')}</small></div><div class="attendance-times"><span>${fmtDate(a.startedAt)} → ${a.endedAt?fmtDate(a.endedAt):'TERAZ'}</span><b>${attendanceDuration(a)}</b></div></div>`).join(''):'<div class="empty">Brak meldunków.</div>'}</div>`;
 }
@@ -597,6 +608,54 @@ async function stopAttendance(){
     if(state.mode==='demo'){a.endedAt=nowISO();await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);saveDemoDB();}
     else{await cloudFetch('/rest/v1/rpc/stop_work_attendance',{method:'POST',body:{}});await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);await loadCloudDB({silent:true});}
     notify('Meldunek IMPERIUM',`Zakończono pracę: ${getLoc(a.locationId)?.name||'obiekt'}`);
+  });
+}
+async function addWorkShift(){
+  if(!isAdmin())return;
+  const userId=document.getElementById('shift-worker')?.value,locationId=document.getElementById('shift-location')?.value;
+  const start=new Date(document.getElementById('shift-start')?.value),end=new Date(document.getElementById('shift-end')?.value);
+  if(!userId||!locationId||!Number.isFinite(start.getTime())||!Number.isFinite(end.getTime())||end<=start||end-start>86400000)return toast('Podaj pracownika, obiekt i prawidłowe godziny zmiany.');
+  await withAction('Zapisywanie grafiku…',async()=>{
+    if(state.mode==='demo'){
+      state.db.shifts ||= [];
+      if(state.db.shifts.some(s=>s.userId===userId&&new Date(s.startsAt)<end&&new Date(s.endsAt)>start))throw Error('Zmiany tego pracownika nakładają się.');
+      state.db.shifts.push({id:uid(),userId,locationId,startsAt:start.toISOString(),endsAt:end.toISOString()});saveDemoDB();
+    }else{
+      await cloudFetch('/rest/v1/rpc/add_work_shift',{method:'POST',body:{p_profile:userId,p_location:locationId,p_start:start.toISOString(),p_end:end.toISOString()}});
+      await loadCloudDB({silent:true});
+    }
+    toast('Zmiana zapisana.');
+  });
+}
+async function deleteWorkShift(id){
+  if(!isAdmin())return;
+  await withAction('Usuwanie zmiany…',async()=>{
+    if(state.mode==='demo'){
+      const s=state.db.shifts.find(x=>x.id===id);
+      if(s&&voucherRows(s.userId).some(v=>v.startsAt&&new Date(v.startsAt)<new Date(s.endsAt)&&new Date(v.endsAt)>new Date(s.startsAt)))throw Error('Zmiana ma już przypisany voucher.');
+      state.db.shifts=state.db.shifts.filter(x=>x.id!==id);saveDemoDB();
+    }else{await cloudFetch('/rest/v1/rpc/delete_work_shift',{method:'POST',body:{p_id:id}});await loadCloudDB({silent:true});}
+  });
+}
+async function adminStartAttendance(){
+  if(!isAdmin())return;
+  const userId=document.getElementById('admin-attendance-worker')?.value,locationId=document.getElementById('admin-attendance-location')?.value;
+  if(!userId||!locationId)return toast('Wybierz pracownika i obiekt.');
+  await withAction('Meldowanie pracownika…',async()=>{
+    if(state.mode==='demo'){
+      if(state.db.attendance.some(a=>a.userId===userId&&!a.endedAt))throw Error('Pracownik jest już zameldowany.');
+      const a={id:uid(),userId,locationId,startedAt:nowISO(),endedAt:null,startedBy:currentUser().id};state.db.attendance.unshift(a);state.attendance=state.db.attendance;saveDemoDB();
+    }else{await cloudFetch('/rest/v1/rpc/admin_start_attendance',{method:'POST',body:{p_profile:userId,p_location:locationId}});await loadCloudDB({silent:true});}
+    await logEvent('attendance_start',`Administrator zameldował ${getUser(userId)?.name||'pracownika'} — ${getLoc(locationId)?.name||'obiekt'}`);
+  });
+}
+async function adminStopAttendance(userId){
+  if(!isAdmin())return;
+  await withAction('Kończenie meldunku…',async()=>{
+    if(state.mode==='demo'){
+      const a=state.db.attendance.find(x=>x.userId===userId&&!x.endedAt);if(!a)throw Error('Brak aktywnego meldunku.');a.endedAt=nowISO();a.endedBy=currentUser().id;saveDemoDB();
+    }else{await cloudFetch('/rest/v1/rpc/admin_stop_attendance',{method:'POST',body:{p_profile:userId}});await loadCloudDB({silent:true});}
+    await logEvent('attendance_stop',`Administrator zakończył meldunek: ${getUser(userId)?.name||'pracownik'}`);
   });
 }
 function renderActivityPage(){return `<div class="toolbar"><div><div class="eyebrow">Dziennik</div><h2 class="section-title">Aktywność</h2></div></div><div class="settings-card">${state.db.events.slice(0,100).map(e=>`<div class="activity"><p>${esc(e.text)}</p><small>${fmtDate(e.createdAt)}</small></div>`).join('')||'<div class="empty">Brak zdarzeń.</div>'}</div>`;}
@@ -618,7 +677,8 @@ function renderProfilePage(){
   return `<section class="profile-page">
     <div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL COMMAND FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div><div class="profile-balance"><span>SALDO</span><b>${coinBalance(u.id)} NK</b></div></div>
     <div class="profile-progress-grid">${renderProgressBar('MOJA REALIZACJA',ps.done,ps.total,ps.pct,ps.active+' aktywnych')}${renderProgressBar('REALIZACJA IMPERIUM',allDone,all.length,allPct,'wszystkie zadania systemu')}</div>
-    <div class="voucher-exchange"><div class="eyebrow">WYMIANA NK</div><h3>Imperatorski wymiennik</h3><div class="voucher-options"><label><input type="radio" name="voucher-kind" value="hours_2" checked> 1000 NK · 2 godziny</label><label><input type="radio" name="voucher-kind" value="hours_4"> 2000 NK · 4 godziny</label><label><input type="radio" name="voucher-kind" value="day"> 5000 NK · dzień wolny</label><label><input type="radio" name="voucher-kind" value="bonus_500"> 7500 NK · premia 500 zł</label></div><div class="field" id="voucher-time-field"><label>Początek wolnego (data i godzina)</label><input type="datetime-local" id="voucher-start"></div><div class="field" id="voucher-day-field" hidden><label>Dzień wolny</label><input type="date" id="voucher-day"></div><p class="subtle">Terminy wolnego obowiązują według czasu polskiego. Punkty są pobierane przy wymianie. Premia tworzy wniosek widoczny dla administratora; wypłata jest potwierdzana osobno.</p><button class="goldbtn" id="redeem-voucher">Wymień Nikitocoiny</button></div>
+    <div class="settings-card shift-list"><div class="subheading">Mój grafik pracy</div>${shiftsFor(u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,20).map(s=>`<div class="shift-row"><div><b>${esc(getLoc(s.locationId)?.name||'Obiekt')}</b><small>${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div></div>`).join('')||'<div class="empty compact">Administrator nie dodał jeszcze zmian.</div>'}</div>
+    <div class="voucher-exchange"><div class="eyebrow">WYMIANA NK</div><h3>Imperatorski wymiennik</h3><div class="voucher-options"><label><input type="radio" name="voucher-kind" value="hours_2" checked> 1000 NK · 2 godziny</label><label><input type="radio" name="voucher-kind" value="hours_4"> 2000 NK · 4 godziny</label><label><input type="radio" name="voucher-kind" value="day"> 5000 NK · dzień wolny</label><label><input type="radio" name="voucher-kind" value="bonus_500"> 7500 NK · premia 500 zł</label></div><div class="field" id="voucher-time-field"><label>Początek wolnego (data i godzina)</label><input type="datetime-local" id="voucher-start"></div><div class="field" id="voucher-day-field" hidden><label>Dzień wolny</label><input type="date" id="voucher-day"></div><p class="subtle">Godziny wolnego muszą mieścić się w zapisanej zmianie, a dzień wolny wymaga zmiany w tym dniu. Punkty są pobierane przy wymianie. Premia tworzy wniosek widoczny dla administratora; wypłata jest potwierdzana osobno.</p><button class="goldbtn" id="redeem-voucher">Wymień Nikitocoiny</button></div>
     <div class="profile-section-head compact"><div><div class="eyebrow">MOJE KORZYŚCI</div><h3>Vouchery</h3></div></div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v)).join('')||'<div class="empty compact">Nie masz jeszcze voucherów.</div>'}</div>
     <div class="profile-section-head"><div><div class="eyebrow">PRZYDZIAŁ</div><h3>Moje zadania</h3></div><span>${active.length} AKTYWNE</span></div>
     <div class="profile-missions">${active.length?active.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak aktywnych zadań.</div>'}</div>
@@ -806,6 +866,10 @@ setTimeout(()=>{
   document.getElementById('cloud-logout')?.addEventListener('click',signOutCloud);
   document.getElementById('attendance-start')?.addEventListener('click',startAttendance);
   document.getElementById('attendance-stop')?.addEventListener('click',stopAttendance);
+  document.getElementById('shift-add')?.addEventListener('click',addWorkShift);
+  document.querySelectorAll('[data-shift-delete]').forEach(b=>b.onclick=()=>deleteWorkShift(b.dataset.shiftDelete));
+  document.getElementById('admin-attendance-start')?.addEventListener('click',adminStartAttendance);
+  document.querySelectorAll('[data-admin-attendance-stop]').forEach(b=>b.onclick=()=>adminStopAttendance(b.dataset.adminAttendanceStop));
   updateTimers();
 }
 
