@@ -72,7 +72,9 @@ public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQ = 9131;
     private static final int NOTIFICATION_REQ = 9132;
-    private static final String CHANNEL_ID = "imperium_updates_v2";
+    // Android retains the sound chosen when a channel is first created.
+    // v2 existed before the custom sound was added, so it can remain silent.
+    private static final String CHANNEL_ID = "imperium_alerts_v3";
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
@@ -567,7 +569,7 @@ loadImperium();
             NotificationChannel channel =
                     new NotificationChannel(
                             CHANNEL_ID,
-                            "IMPERIUM",
+                            "IMPERIUM — zadania",
                             NotificationManager.IMPORTANCE_DEFAULT
                     );
 
@@ -575,7 +577,7 @@ loadImperium();
                     "Zmiany zadań i raportów"
             );
 Uri soundUri = Uri.parse(
-    "android.resource://" + getPackageName() + "/" + R.raw.imperium_notification
+    "android.resource://" + getPackageName() + "/raw/imperium_notification"
 );
 
 android.media.AudioAttributes audioAttributes =
