@@ -8,6 +8,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  const chat=source.slice(source.indexOf('let chatFiles='),source.indexOf('  function renderTasksPage'));
  await page.route('https://imperium.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="app"></div>'}));
  await page.goto('https://imperium.test/');
+ await page.addStyleTag({content:fs.readFileSync('styles.css','utf8')});
  await page.addScriptTag({content:`
  const state={mode:'cloud'},BASE_CFG={};
  const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -22,6 +23,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  window.testAudio=a=>{chatAudio=a;};
  `});
  await page.evaluate(()=>chatTest.loadChatMessages());
+ const compose=await page.locator('#chat-attach').boundingBox(),send=await page.locator('#chat-send').boundingBox();
+ assert.ok(Math.abs(compose.y-send.y)<10,'Attachment and send controls share one mobile row');
  assert.equal(await page.locator('[data-chat-delete]').count(),0,'Cannot delete other author');
  assert.ok((await page.evaluate(()=>window.calls[0][1])).includes('chat_messages?select='),'PostgREST query is a single argument');
  await page.locator('#chat-files').setInputFiles([{name:'picture.png',mimeType:'image/png',buffer:Buffer.from('image')},{name:'song.mp3',mimeType:'audio/mpeg',buffer:Buffer.from('audio')},{name:'clip.mp4',mimeType:'video/mp4',buffer:Buffer.from('video')},{name:'contract.pdf',mimeType:'application/pdf',buffer:Buffer.from('pdf')},{name:'contract.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',buffer:Buffer.from('word')}]);
