@@ -30,6 +30,13 @@ jobs:
         run: |
           echo "${{ secrets.IMPERIUM_KEYSTORE_BASE64 }}" | base64 --decode > android-wrapper/imperium-release.jks
 
+      - name: Restore Firebase Android configuration
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          test -n "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" || (echo "Firebase Android configuration is missing" && exit 1)
+          printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android-wrapper/app/google-services.json
+
       - name: Verify bundled web UI
         run: |
           grep -q "Meldunek" android-wrapper/app/src/main/assets/app.js
@@ -45,11 +52,11 @@ jobs:
 
       - name: Rename APK
         run: |
-          cp android-wrapper/app/build/outputs/apk/release/app-release.apk IMPERIUM-5.2.7.apk
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk IMPERIUM-5.3.0.apk
 
       - name: Upload IMPERIUM APK
         uses: actions/upload-artifact@v4
         with:
-          name: IMPERIUM-5.2.7
-          path: IMPERIUM-5.2.7.apk
+          name: IMPERIUM-5.3.0
+          path: IMPERIUM-5.3.0.apk
           if-no-files-found: error

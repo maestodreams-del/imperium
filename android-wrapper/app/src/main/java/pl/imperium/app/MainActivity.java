@@ -28,6 +28,7 @@ import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.widget.Toast;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import java.io.OutputStream;
 import java.io.File;
@@ -38,6 +39,17 @@ import java.net.URL;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 public class MainActivity extends Activity {
+    public static volatile boolean isForeground = false;
+
+    @Override protected void onStart() {
+        super.onStart();
+        isForeground = true;
+    }
+
+    @Override protected void onStop() {
+        isForeground = false;
+        super.onStop();
+    }
 
     private void hideSystemBars() {
         // The WebView must already be attached to the window. Keep decor fitting
@@ -62,6 +74,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (web != null) web.post(this::hideSystemBars);
+        if (web != null) web.post(() -> web.evaluateJavascript(
+                "window.imperiumRequestPushToken && window.imperiumRequestPushToken()", null));
     }
 
     @Override
@@ -806,9 +820,17 @@ channel.enableVibration(true);
 
     public class AndroidBridge {
         @JavascriptInterface
+        public void requestPushToken() {
+            FirebaseMessaging.getInstance().getToken().addOnSuccessListener(token ->
+                    runOnUiThread(() -> {
+                        if (web != null) web.evaluateJavascript(
+                                "window.imperiumPushToken(" + org.json.JSONObject.quote(token) + ")", null);
+                    }));
+        }
+        @JavascriptInterface
         public String diagnostics() {
             String currentUrl = web != null ? web.getUrl() : "";
-            return "APK=5.2.4; bundled=" + BUNDLED_WEB_VERSION
+            return "APK=5.3.0; bundled=" + BUNDLED_WEB_VERSION
                     + "; installedWeb=" + getInstalledWebVersion()
                     + "; activeIndex=" + (activeWebDir != null && new File(activeWebDir, "index.html").exists())
                     + "; url=" + currentUrl;
