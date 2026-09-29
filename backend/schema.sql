@@ -1275,3 +1275,12 @@ create policy invoice_drafts_admin_update on public.invoice_drafts for update to
 create policy invoice_drafts_admin_delete on public.invoice_drafts for delete to authenticated
   using (public.is_admin() and status='draft');
 grant select,insert,update,delete on public.invoice_sellers,public.invoice_drafts to authenticated;
+-- Registered address is distinct from the premises rented by the company.
+alter table public.rental_agreements
+  add column if not exists registered_address text not null default '';
+do $$ begin
+  if not exists (select 1 from pg_constraint where conrelid='public.rental_agreements'::regclass and conname='rental_registered_address_length') then
+    alter table public.rental_agreements add constraint rental_registered_address_length
+      check (char_length(registered_address)<=300);
+  end if;
+end $$;

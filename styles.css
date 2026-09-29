@@ -1474,3 +1474,4 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 .aureus-shell .bottomnav .navitem.important-soon i::after{content:'!';position:absolute;top:-4px;right:-3px;display:grid;place-items:center;width:15px;height:15px;border-radius:50%;background:#f05b64;color:#fff;font:900 12px/1 sans-serif;box-shadow:0 0 9px #f05b64;animation:missionBlink 1.1s steps(1,end) infinite}
 @keyframes missionBlink{50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.aureus-shell .bottomnav .navitem.important-soon i::after{animation:none}}
+.nip-lookup{margin-top:8px;align-self:flex-start}.nip-lookup-result{display:block;margin-top:6px;line-height:1.4}.rental-registered{margin:5px 0;color:var(--text-muted,#9ba6b5)}
