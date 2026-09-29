@@ -1439,3 +1439,7 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 .team-day b{font-size:11px}.team-day small{font-size:10px;color:#9bcbe0;line-height:1.3;overflow-wrap:anywhere}
 .team-day small span{display:block;color:#8b9da9;font-size:9px}
 @media(max-width:600px){.team-day{min-height:53px;padding:3px}.team-day small{font-size:9px}.team-month-controls{gap:8px}}
+.task-schedule{margin:8px 0;color:#9bcbe0;font-size:11px;line-height:1.45}
+.task-assignees{max-height:190px;overflow-y:auto;padding:8px;border:1px solid rgba(136,180,213,.2)}
+.task-actions button[disabled]{opacity:.5;cursor:not-allowed}
+.task-assignees [hidden]{display:none!important}
