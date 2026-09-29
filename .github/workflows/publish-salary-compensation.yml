@@ -4,13 +4,69 @@ on:
   push:
     branches: [main]
     paths: ['.github/workflows/publish-salary-compensation.yml']
+  pull_request:
+    paths: ['app.js', 'styles.css', 'backend/salary-compensation.sql', 'tests/salary-*', '.github/workflows/publish-salary-compensation.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: payroll_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify JavaScript and mobile assets
+        run: |
+          node --check app.js
+          cmp app.js android-wrapper/app/src/main/assets/app.js
+          cmp styles.css android-wrapper/app/src/main/assets/styles.css
+      - name: Check payroll in isolated database
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: local-test-only
+          PGDATABASE: payroll_test
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          psql -v ON_ERROR_STOP=1 -f tests/salary-db-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f backend/salary.sql
+          psql -v ON_ERROR_STOP=1 -f backend/salary-compensation.sql
+          psql -v ON_ERROR_STOP=1 -f backend/salary-compensation.sql
+          psql -v ON_ERROR_STOP=1 -f tests/salary-db-checks.sql
+      - name: Check mobile payroll interface
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/payroll-qa" --no-save playwright@1.58.2
+          "$RUNNER_TEMP/payroll-qa/node_modules/.bin/playwright" install --with-deps chromium
+          python3 -m http.server 8769 --bind 127.0.0.1 >/tmp/payroll-http.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..10}; do curl -fsS http://127.0.0.1:8769/index.html >/dev/null && break || sleep 1; done
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/payroll-qa/node_modules/playwright" node tests/salary-browser-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: payroll-interface-check
+          path: /tmp/imperium-payroll-smoke.png
+          if-no-files-found: ignore
   publish:
+    needs: verify
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +78,22 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f backend/salary-compensation.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/salary-compensation.sql
+      - name: Verify all requested active employee presets
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$ begin
+            if (select count(*) from public.profiles p join public.salary_compensation s on s.profile_id=p.id where p.active and (
+              (p.full_name='Zenon' and s.pay_type='fixed' and s.fixed_grosz=1200000) or
+              (p.full_name='Mikalai' and s.pay_type='fixed' and s.fixed_grosz=1000000) or
+              (p.full_name ~* '^Mikita( |$)' and s.pay_type='fixed' and s.fixed_grosz=800000) or
+              (p.full_name ~* '^Dmytro( |$)' and s.pay_type='fixed' and s.fixed_grosz=600000) or
+              (p.full_name='Olena' and s.pay_type='hourly' and s.hourly_grosz=2500)
+            )) <> 5 then raise exception 'Requested payroll presets were not all configured'; end if;
+          end $$;
+          SQL
       - name: Migrate and allocate update number
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -68,6 +139,6 @@ jobs:
           begin;
           update public.app_updates set active=false where active=true;
           insert into public.app_updates(version,version_name,package_url,active)
-          values (:'version'::integer, 'Stałe wynagrodzenie i korekty pensji', :'package_url', true);
+          values (:'version'::integer, 'Pensje · poprawne stawki i stabilne korekty', :'package_url', true);
           commit;
           SQL
