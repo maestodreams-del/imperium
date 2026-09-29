@@ -1094,6 +1094,7 @@ td {
 .attendance-live-row>div,.attendance-row>div:first-child,.attendance-active>div>div{display:grid;gap:3px;flex:1}
 .attendance-live-row small,.attendance-row small,.attendance-active small{display:block;color:#75684f;margin-top:3px}
 .attendance-live-row strong{margin-left:auto;font-variant-numeric:tabular-nums;color:#8a641b}
+.attendance-timer-edit{display:grid;gap:3px;justify-items:center;flex:0 0 auto;padding:7px 10px;border:1px solid #46728a;background:#13232d;color:#a9d8ed;border-radius:9px;cursor:pointer;font:inherit}.attendance-timer-edit strong{margin:0!important;color:#85bad5;font-variant-numeric:tabular-nums;font-size:18px}.attendance-timer-edit span{font-size:10px;font-weight:700}.attendance-active .attendance-timer-edit{width:100%;margin-top:8px}.attendance-active .attendance-timer-edit strong{font-size:27px}.attendance-live-row{flex-wrap:wrap}.attendance-live-row>div{min-width:120px}
 .attendance-dot{width:10px;height:10px;border-radius:50%;background:#3b9b61;box-shadow:0 0 0 4px rgba(59,155,97,.13);flex:0 0 auto}
 .attendance-checkin{max-width:760px;margin-left:auto;margin-right:auto}
 .attendance-active{display:grid;gap:14px}
