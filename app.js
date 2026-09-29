@@ -431,7 +431,7 @@ function render(){
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
   <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${canViewImportant()?nav('important',`Ważne${state.importantAlerts.length?' ('+state.importantAlerts.length+')':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${canViewImportant()?nav('important',`Ważne${state.importantAlerts.length+importantPlannedMissions().length?' ('+(state.importantAlerts.length+importantPlannedMissions().length)+')':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   bind();
 }
@@ -758,10 +758,22 @@ function renderWorkerPlans(u){
     .sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
   return `<div class="settings-card worker-plans"><div class="subheading">Planowane zadania · ${esc(u.name)}</div>${tasks.map(t=>`<button class="history-row" data-history-task="${esc(t.id)}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'Obiekt')} · ${fmtDate(t.scheduledStart)} → ${fmtDate(t.scheduledEnd)}</small></span><em>${taskStatusLabel(t.status)}</em></button>`).join('')||'<div class="empty compact">Brak planowanych zadań.</div>'}</div>`;
 }
+function importantPlannedMissions(){
+  if(!canViewImportant())return [];
+  const visible=isAdmin()?null:new Set(currentUser().locationIds),groups=new Map(),now=Date.now();
+  for(const task of state.db.tasks){
+    if(task.status!=='open'||!task.scheduledStart||new Date(task.scheduledStart).getTime()<=now||!task.assignedTo||visible&&!visible.has(task.locationId))continue;
+    const key=[task.groupId||task.id,task.locationId,task.scheduledStart,task.scheduledEnd,task.title].join('|');
+    if(!groups.has(key))groups.set(key,{task,workers:[]});
+    const name=getUser(task.assignedTo)?.name;
+    if(name&&!groups.get(key).workers.includes(name))groups.get(key).workers.push(name);
+  }
+  return [...groups.values()].sort((a,b)=>new Date(a.task.scheduledStart)-new Date(b.task.scheduledStart));
+}
 function renderImportantPage(){
   if(!canViewImportant())return '';
-  const alerts=state.importantAlerts||[];
-  return `<div class="toolbar"><div><div class="eyebrow">PILNE TERMINY</div><h2 class="section-title">Ważne</h2></div><span class="badge">${alerts.length} aktywne</span></div><div class="status-note">Przypomnienia pozostają tutaj do oznaczenia jako wykonane. Daty dotyczą obiektów, do których masz dostęp.</div><div class="important-list">${alerts.map(a=>`<article class="settings-card important-card"><div><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} · termin ${esc(a.dueOn)}</small><h3>${esc(a.title)}</h3>${a.details?`<p>${esc(a.details)}</p>`:''}</div><button class="smallbtn gold" data-complete-alert="${esc(a.id)}">Wykonane</button></article>`).join('')||'<div class="empty">Nie ma aktywnych przypomnień.</div>'}</div>`;
+  const alerts=state.importantAlerts||[],missions=importantPlannedMissions();
+  return `<div class="toolbar"><div><div class="eyebrow">PILNE TERMINY</div><h2 class="section-title">Ważne</h2></div><span class="badge">${alerts.length} przypomnień · ${missions.length} misji</span></div><div class="status-note">Przypomnienia pozostają tutaj do oznaczenia jako wykonane. Daty dotyczą obiektów, do których masz dostęp.</div><div class="subheading important-section-title">Planowane misje pracowników</div><div class="important-list">${missions.map(({task,workers})=>`<button class="settings-card important-mission" data-history-task="${esc(task.id)}"><span><small>${esc(getLoc(task.locationId)?.name||'Obiekt')} · ${fmtDate(task.scheduledStart)} → ${fmtDate(task.scheduledEnd)}</small><b>${esc(task.title)}</b><small>Wykonawcy: ${esc(workers.join(', '))}</small></span><em>OTWÓRZ</em></button>`).join('')||'<div class="empty compact">Brak zaplanowanych misji.</div>'}</div><div class="subheading important-section-title">Przypomnienia o terminach</div><div class="important-list">${alerts.map(a=>`<article class="settings-card important-card"><div><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} · termin ${esc(a.dueOn)}</small><h3>${esc(a.title)}</h3>${a.details?`<p>${esc(a.details)}</p>`:''}</div><button class="smallbtn gold" data-complete-alert="${esc(a.id)}">Wykonane</button></article>`).join('')||'<div class="empty">Nie ma aktywnych przypomnień.</div>'}</div>`;
 }
 function deliverImportantAlerts(){
   const id=state.auth?.user?.id;if(!id||!state.importantAlerts.length)return;
