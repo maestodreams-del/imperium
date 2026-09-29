@@ -22,12 +22,14 @@ import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
+import android.webkit.PermissionRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.widget.Toast;
+import android.widget.FrameLayout;
 
 import java.io.OutputStream;
 import java.io.File;
@@ -72,12 +74,17 @@ public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQ = 9131;
     private static final int NOTIFICATION_REQ = 9132;
+    private static final int CAMERA_REQ = 9133;
     // Android retains the sound chosen when a channel is first created.
     // v2 existed before the custom sound was added, so it can remain silent.
     private static final String CHANNEL_ID = "imperium_alerts_v3";
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
+    private PermissionRequest mediaPermission;
+    private FrameLayout webContainer;
+    private View customVideoView;
+    private WebChromeClient.CustomViewCallback customVideoCallback;
 private File updatesDir;
 private File activeWebDir;
 private File stagingWebDir;
@@ -452,6 +459,65 @@ private void loadImperium() {
 
         web.setWebChromeClient(new WebChromeClient() {
             @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                runOnUiThread(() -> {
+                    // Only local IMPERIUM content may request camera or microphone.
+                    Uri origin = request.getOrigin();
+                    if (origin == null || !"file".equals(origin.getScheme())) {
+                        request.deny();
+                        return;
+                    }
+                    for (String resource : request.getResources()) {
+                        if (!PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)
+                                && !PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) {
+                            request.deny();
+                            return;
+                        }
+                    }
+                    boolean camera = false, microphone = false;
+                    for (String resource : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) camera = true;
+                        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) microphone = true;
+                    }
+                    java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+                    if (camera && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
+                        missing.add(Manifest.permission.CAMERA);
+                    if (microphone && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+                        missing.add(Manifest.permission.RECORD_AUDIO);
+                    if (missing.isEmpty()) request.grant(request.getResources());
+                    else {
+                        mediaPermission = request;
+                        requestPermissions(missing.toArray(new String[0]), CAMERA_REQ);
+                    }
+                });
+            }
+
+            @Override
+            public void onPermissionRequestCanceled(PermissionRequest request) {
+                if (mediaPermission == request) mediaPermission = null;
+            }
+
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (customVideoView != null) { callback.onCustomViewHidden(); return; }
+                customVideoView = view;
+                customVideoCallback = callback;
+                web.setVisibility(View.GONE);
+                webContainer.addView(view, new FrameLayout.LayoutParams(-1, -1));
+            }
+
+            @Override
+            public void onHideCustomView() {
+                if (customVideoView == null) return;
+                webContainer.removeView(customVideoView);
+                customVideoView = null;
+                web.setVisibility(View.VISIBLE);
+                if (customVideoCallback != null) customVideoCallback.onCustomViewHidden();
+                customVideoCallback = null;
+                hideSystemBars();
+            }
+
+            @Override
             public boolean onShowFileChooser(
                     WebView webView,
                     ValueCallback<Uri[]> callback,
@@ -471,6 +537,7 @@ private void loadImperium() {
                 String[] mime = new String[]{
                         "image/*",
                         "video/*",
+                        "audio/*",
                         "application/pdf",
                         "text/plain",
                         "application/msword",
@@ -502,8 +569,21 @@ private void loadImperium() {
        prepareUpdateStorage();
 loadImperium();
 
-        setContentView(web);
+        webContainer = new FrameLayout(this);
+        webContainer.addView(web, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(webContainer);
         web.post(this::hideSystemBars);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != CAMERA_REQ || mediaPermission == null) return;
+        boolean allowed = true;
+        for (int result : grantResults) if (result != PackageManager.PERMISSION_GRANTED) allowed = false;
+        if (allowed) mediaPermission.grant(mediaPermission.getResources());
+        else mediaPermission.deny();
+        mediaPermission = null;
     }
 
     @Override
@@ -554,6 +634,15 @@ loadImperium();
 
     @Override
     public void onBackPressed() {
+
+        if (customVideoView != null) {
+            webContainer.removeView(customVideoView);
+            customVideoView = null;
+            web.setVisibility(View.VISIBLE);
+            if (customVideoCallback != null) customVideoCallback.onCustomViewHidden();
+            customVideoCallback = null;
+            return;
+        }
 
         if (web != null && web.canGoBack()) {
             web.goBack();
@@ -808,7 +897,7 @@ channel.enableVibration(true);
         @JavascriptInterface
         public String diagnostics() {
             String currentUrl = web != null ? web.getUrl() : "";
-            return "APK=5.2.4; bundled=" + BUNDLED_WEB_VERSION
+            return "APK=5.2.8; bundled=" + BUNDLED_WEB_VERSION
                     + "; installedWeb=" + getInstalledWebVersion()
                     + "; activeIndex=" + (activeWebDir != null && new File(activeWebDir, "index.html").exists())
                     + "; url=" + currentUrl;

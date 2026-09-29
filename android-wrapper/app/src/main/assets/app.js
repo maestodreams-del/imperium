@@ -256,6 +256,8 @@ async function signUpCloud(name,email,password){
   else { toast('Konto utworzone. Jeśli w Supabase włączono potwierdzenie e-mail, potwierdź adres i zaloguj się.'); }
 }
 async function signOutCloud(){
+  if(chatLive.mode)await stopChatLive();
+  for(const url of chatObjectUrls.values())URL.revokeObjectURL(url);chatObjectUrls.clear();
   try{await cloudFetch('/auth/v1/logout',{method:'POST'});}catch(e){}
   localStorage.removeItem(AUTH_KEY); state.auth=null; state.db=null; stopPolling(); render();
 }
@@ -543,84 +545,242 @@ function bindSalary(){
   });
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
+let chatRows=[],chatFiles=[],chatSignature='',chatObjectUrls=new Map(),chatAudioList=[],chatAudioIndex=-1,chatThumbObserver=null;
+function chatFileKind(f){const mime=f.mime_type||'',name=f.file_name.toLowerCase();return mime.startsWith('image/')&&!/svg|html/i.test(mime)?'image':mime.startsWith('video/')?'video':mime.startsWith('audio/')?'audio':mime==='application/pdf'||name.endsWith('.pdf')?'pdf':name.endsWith('.docx')?'docx':name.endsWith('.doc')?'doc':'file';}
 function renderChatPage(){
-  const u=currentUser();
-  return `<section class="chat-page comms-page">
-    <div class="panel chat-panel comms-panel">
-      <div class="chat-header comms-header">
-        <div class="comms-title"><div class="comms-emblem">${imperialIcon('chat')}</div><div><div class="eyebrow">SECURE COMMUNICATION CHANNEL</div><h3>IMPERIUM // GENERAL</h3></div></div>
-        <div class="comms-state"><i></i><span>ONLINE</span></div>
-      </div>
-      <div id="chat-messages" class="chat-messages comms-stream"><div class="empty">Synchronizacja kanału…</div></div>
-      <div class="chat-compose comms-compose">
-        <div class="comms-input-wrap"><span class="comms-prompt">›</span><textarea id="chat-input" maxlength="2000" rows="1" placeholder="Wiadomość do kanału…"></textarea></div>
-        <button class="comms-send" id="chat-send" type="button" aria-label="Wyślij"><span>WYŚLIJ</span><b>↗</b></button>
-      </div>
-    </div>
-  </section>`;
+  return `<section class="chat-page comms-page"><div class="panel chat-panel comms-panel">
+    <div class="chat-header comms-header"><div class="comms-title"><div class="comms-emblem">${imperialIcon('chat')}</div><div><div class="eyebrow">SECURE COMMUNICATION CHANNEL</div><h3>IMPERIUM // GENERAL</h3></div></div><button class="smallbtn" id="chat-live-start" title="Transmisja kamery">● LIVE</button></div>
+    <div id="chat-live-banner" class="chat-live-banner" hidden></div>
+    <div id="chat-audio-player" class="chat-audio-player" hidden><button id="chat-audio-prev" aria-label="Poprzedni utwór">⏮</button><button id="chat-audio-toggle" aria-label="Odtwórz lub wstrzymaj">⏯</button><button id="chat-audio-next" aria-label="Następny utwór">⏭</button><button id="chat-audio-stop" aria-label="Zatrzymaj">■</button><span id="chat-audio-title"></span><audio id="chat-audio-element"></audio></div>
+    <div id="chat-messages" class="chat-messages comms-stream"><div class="empty">Synchronizacja kanału…</div></div>
+    <div class="chat-compose comms-compose"><input id="chat-files" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt,.xlsx,.xls,.zip" hidden><button class="chat-attach" id="chat-attach" aria-label="Dołącz pliki" title="Zdjęcie, wideo, muzyka lub dokument">📎</button><div class="comms-input-wrap"><span class="comms-prompt">›</span><textarea id="chat-input" maxlength="2000" rows="1" placeholder="Wiadomość do kanału…"></textarea></div><button class="comms-send" id="chat-send" type="button" aria-label="Wyślij"><span>WYŚLIJ</span><b>↗</b></button></div>
+    <div id="chat-selected" class="chat-selected" hidden></div>
+  </div><div id="chat-viewer" class="chat-viewer" hidden><div class="chat-viewer-bar"><strong id="chat-viewer-name"></strong><button class="smallbtn" id="chat-viewer-fullscreen">Pełny ekran</button><button class="smallbtn" id="chat-viewer-download">Pobierz</button><button class="smallbtn" id="chat-viewer-close">Zamknij</button></div><div id="chat-viewer-body" class="chat-viewer-body"></div></div></section>`;
 }
-  async function loadChatMessages(){
-  if(state.mode!=='cloud') return;
-
-  const box=document.getElementById('chat-messages');
-  if(!box)return;
-
+async function chatBlobUrl(file){
+  if(chatObjectUrls.has(file.id))return chatObjectUrls.get(file.id);
+  const response=await cloudFetch(`/storage/v1/object/authenticated/chat-media/${encodeStoragePath(file.storage_path)}`,{raw:true});
+  const url=URL.createObjectURL(await response.blob());chatObjectUrls.set(file.id,url);return url;
+}
+function chatAttachmentCard(f){
+  const kind=chatFileKind(f),icon=({image:'🖼',video:'🎬',audio:'♫',pdf:'📄',docx:'📝',doc:'📝',file:'📎'})[kind];
+  return `<button class="chat-file" data-chat-open="${esc(f.id)}"><span>${icon}</span><b>${esc(f.file_name)}</b><small>${bytes(f.size_bytes)}</small>${kind==='image'?`<img data-chat-thumb="${esc(f.id)}" alt="${esc(f.file_name)}" loading="lazy">`:''}</button>`;
+}
+async function loadChatMessages(){
+  if(state.mode!=='cloud'||state.tab!=='chat'||state.modal)return;
+  const box=document.getElementById('chat-messages');if(!box)return;
   try{
-    const rows=await pgGet(
-      'chat_messages',
-      'select=id,user_id,message,created_at&order=created_at.asc&limit=200'
-    );
-
+    const rows=await pgGet('chat_messages?select=id,user_id,message,created_at&order=created_at.desc&limit=200');
+    const messages=[...rows].reverse(),ids=messages.map(m=>m.id);
+    const files=ids.length?await pgGet(`chat_attachments?select=*&message_id=in.(${ids.join(',')})&order=created_at.asc`):[];
+    const signature=messages.map(m=>m.id).join(',')+'|'+files.map(f=>f.id).join(',');
+    chatRows=messages;chatFiles=files;chatAudioList=files.filter(f=>chatFileKind(f)==='audio');
+    if(signature===chatSignature&&box.dataset.loaded)return;
+    chatSignature=signature;
     const wasNearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<90;
-    box.innerHTML=rows.length
-      ? rows.map(m=>{
-          const author=getUser(m.user_id), mine=m.user_id===currentUser()?.id;
-          const d=new Date(m.created_at);
-          return `<div class="chat-message ${mine?'mine':''}">
-            <div class="chat-avatar">${initials(author?.name||'P')}</div>
-            <div class="chat-bubble"><div class="chat-message-head"><b>${mine?'TY':esc(author?.name||'Pracownik')}</b><span>${d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})}</span></div><div class="chat-message-text">${esc(m.message)}</div></div>
-          </div>`;
-        }).join('')
-      : '<div class="empty">Kanał jest pusty. Wyślij pierwszą wiadomość.</div>';
-    if(wasNearBottom||!box.dataset.loaded) box.scrollTop=box.scrollHeight;
+    chatThumbObserver?.disconnect();
+    box.innerHTML=messages.length?messages.map(m=>{
+      const author=getUser(m.user_id),mine=m.user_id===currentUser()?.id,d=new Date(m.created_at),attachments=files.filter(f=>f.message_id===String(m.id));
+      return `<div class="chat-message ${mine?'mine':''}"><div class="chat-avatar">${initials(author?.name||'P')}</div><div class="chat-bubble"><div class="chat-message-head"><b>${mine?'TY':esc(author?.name||'Pracownik')}</b><span>${d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})}</span>${mine?`<button class="chat-delete" data-chat-delete="${esc(m.id)}" aria-label="Usuń własną wiadomość" title="Usuń">×</button>`:''}</div><div class="chat-message-text">${esc(m.message)}</div>${attachments.map(chatAttachmentCard).join('')}</div></div>`;
+    }).join(''):'<div class="empty">Kanał jest pusty. Wyślij pierwszą wiadomość.</div>';
+    box.querySelectorAll('[data-chat-delete]').forEach(b=>b.onclick=()=>deleteChatMessage(b.dataset.chatDelete));
+    box.querySelectorAll('[data-chat-open]').forEach(b=>b.onclick=()=>openChatAttachment(b.dataset.chatOpen));
+    async function loadThumb(img){
+      const f=chatFiles.find(x=>x.id===img.dataset.chatThumb);if(!f||!img.isConnected||img.dataset.loaded)return;
+      img.dataset.loaded='1';
+      try{const response=await cloudFetch(`/storage/v1/object/authenticated/chat-media/${encodeStoragePath(f.storage_path)}`,{raw:true});const url=URL.createObjectURL(await response.blob());if(!img.isConnected){URL.revokeObjectURL(url);return;}img.onload=()=>URL.revokeObjectURL(url);img.onerror=()=>URL.revokeObjectURL(url);img.src=url;}catch(e){img.dataset.loaded='';}
+    }
+    if('IntersectionObserver' in window){
+      chatThumbObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){chatThumbObserver.unobserve(entry.target);loadThumb(entry.target);}}),{root:box,rootMargin:'100px'});
+      box.querySelectorAll('[data-chat-thumb]').forEach(img=>chatThumbObserver.observe(img));
+    }else box.querySelectorAll('[data-chat-thumb]').forEach((img,i)=>{if(i<12)loadThumb(img);});
+    if(wasNearBottom||!box.dataset.loaded)box.scrollTop=box.scrollHeight;
     box.dataset.loaded='1';
-
-  }catch(e){
-    box.innerHTML=`<div class="status-note danger-text">Błąd czatu: ${esc(e.message)}</div>`;
-  }
+  }catch(e){box.innerHTML=`<div class="status-note danger-text">Błąd czatu: ${esc(e.message)}</div>`;}
 }
-
 async function sendChatMessage(){
-  if(state.mode!=='cloud'){
-    toast('Czat działa we wspólnej bazie.');
+  if(state.mode!=='cloud')return toast('Czat działa we wspólnej bazie.');
+  const input=document.getElementById('chat-input'),picker=document.getElementById('chat-files'),button=document.getElementById('chat-send');if(!input)return;
+  const message=input.value.trim(),files=[...(picker?.files||[])];if(!message&&!files.length)return;
+  button.disabled=true;
+  try{
+    const row=(await pgPost('chat_messages',{user_id:currentUser().id,message:message||`📎 ${files.map(f=>f.name).join(', ').slice(0,1900)}`},'return=representation'))?.[0];
+    if(!row?.id)throw new Error('Nie udało się zapisać wiadomości.');
+    for(const file of files){
+      if(!file.size||file.size>50*1024*1024)throw new Error(`${file.name}: limit 50 MB.`);
+      const path=`${currentUser().id}/${row.id}/${Date.now()}-${uid().slice(0,8)}-${safeFileName(file.name)}`;
+      await cloudFetch(`/storage/v1/object/chat-media/${encodeStoragePath(path)}`,{method:'POST',body:file,headers:{'Content-Type':file.type||'application/octet-stream','x-upsert':'false'},raw:true});
+      try{await pgPost('chat_attachments',{message_id:String(row.id),storage_path:path,file_name:file.name,mime_type:file.type||'application/octet-stream',size_bytes:file.size});}
+      catch(e){await cloudFetch(`/storage/v1/object/chat-media/${encodeStoragePath(path)}`,{method:'DELETE',raw:true}).catch(()=>{});throw e;}
+    }
+    input.value='';if(picker)picker.value='';document.getElementById('chat-selected').hidden=true;await loadChatMessages();
+  }catch(e){toast(`Nie udało się wysłać: ${e.message}`);}
+  finally{button.disabled=false;input.focus();}
+}
+async function deleteChatMessage(id){
+  const row=chatRows.find(x=>String(x.id)===id);if(!row||row.user_id!==currentUser()?.id||!confirm('Usunąć swoją wiadomość?'))return;
+  const files=chatFiles.filter(f=>f.message_id===id);
+  try{
+    await pgDelete('chat_messages',`id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(currentUser().id)}`);
+    chatSignature='';await loadChatMessages();
+    for(const f of files){await cloudFetch(`/storage/v1/object/chat-media/${encodeStoragePath(f.storage_path)}`,{method:'DELETE',raw:true}).catch(()=>{});if(chatObjectUrls.has(f.id)){URL.revokeObjectURL(chatObjectUrls.get(f.id));chatObjectUrls.delete(f.id);}}
+  }catch(e){toast(e.message);}
+}
+function stopChatAudio(){const audio=document.getElementById('chat-audio-element');if(audio){audio.pause();audio.removeAttribute('src');audio.load();}chatAudioIndex=-1;const bar=document.getElementById('chat-audio-player');if(bar)bar.hidden=true;}
+async function playChatAudio(index){
+  const f=chatAudioList[index],audio=document.getElementById('chat-audio-element');if(!f||!audio)return;
+  try{audio.src=await chatBlobUrl(f);chatAudioIndex=index;document.getElementById('chat-audio-title').textContent=f.file_name;document.getElementById('chat-audio-player').hidden=false;await audio.play();}
+  catch(e){toast(`Nie udało się odtworzyć: ${e.message}`);}
+}
+async function openChatAttachment(id){
+  const f=chatFiles.find(x=>x.id===id);if(!f)return;
+  if(chatFileKind(f)==='audio')return playChatAudio(chatAudioList.findIndex(x=>x.id===id));
+  if(chatFileKind(f)==='video'){
+    try{
+      const button=document.querySelector(`[data-chat-open="${id}"]`),url=await chatBlobUrl(f);
+      if(!button||!button.isConnected)return;
+      const wrap=document.createElement('div');wrap.className='chat-inline-video';
+      const video=document.createElement('video');video.controls=true;video.playsInline=true;video.preload='metadata';video.src=url;
+      const expand=document.createElement('button');expand.className='smallbtn';expand.textContent='Pełny ekran';expand.onclick=()=>video.requestFullscreen?.().catch(e=>toast(e.message));
+      wrap.append(video,expand);button.replaceWith(wrap);video.play().catch(()=>{});
+    }catch(e){toast(`Nie udało się otworzyć wideo: ${e.message}`);}
     return;
   }
-
-  const input=document.getElementById('chat-input');
-  if(!input)return;
-
-  const message=input.value.trim();
-  if(!message)return;
-
-  const button=document.getElementById('chat-send');
-  if(button)button.disabled=true;
-
   try{
-    await pgPost('chat_messages',{
-      user_id:currentUser().id,
-      message
-    });
-
-    input.value='';
-    await loadChatMessages();
-
-  }catch(e){
-    toast(`Nie udało się wysłać: ${e.message}`);
-
-  }finally{
-    if(button)button.disabled=false;
-    input.focus();
+    const url=await chatBlobUrl(f),kind=chatFileKind(f),viewer=document.getElementById('chat-viewer'),body=document.getElementById('chat-viewer-body');
+    document.getElementById('chat-viewer-name').textContent=f.file_name;
+    viewer.hidden=false;viewer.dataset.url=url;viewer.dataset.name=f.file_name;body.replaceChildren();
+    document.getElementById('chat-viewer-fullscreen').hidden=kind!=='video'&&kind!=='image';
+    if(kind==='video'){const video=document.createElement('video');video.controls=true;video.playsInline=true;video.src=url;body.appendChild(video);}
+    else if(kind==='image'){const img=document.createElement('img');img.src=url;img.alt=f.file_name;body.appendChild(img);}
+    else if(kind==='pdf')await renderChatPdf(url,body);
+    else if(kind==='docx')await renderChatDocx(url,body);
+    else if(f.mime_type.startsWith('text/'))body.textContent=await (await fetch(url)).text();
+    else body.textContent='Podgląd tego formatu nie jest dostępny. Pobierz dokument.';
+  }catch(e){toast(`Nie udało się otworzyć: ${e.message}`);}
+}
+async function renderChatPdf(url,box){
+  box.textContent='Wczytywanie PDF…';const pdfjs=await import('./pdf.min.mjs');pdfjs.GlobalWorkerOptions.workerSrc='./pdf.worker.min.mjs';
+  const pdf=await pdfjs.getDocument(url).promise;box.replaceChildren();
+  for(let n=1;n<=pdf.numPages;n++){if(document.getElementById('chat-viewer')?.hidden)return;const page=await pdf.getPage(n),base=page.getViewport({scale:1}),scale=Math.max(.6,Math.min(2,(box.clientWidth-22)/base.width))*(Math.min(2,devicePixelRatio||1));const canvas=document.createElement('canvas'),view=page.getViewport({scale});canvas.width=view.width;canvas.height=view.height;canvas.style.width=`${view.width/Math.min(2,devicePixelRatio||1)}px`;canvas.style.height='auto';box.appendChild(canvas);await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise;}
+}
+async function renderChatDocx(url,box){
+  box.textContent='Wczytywanie dokumentu…';
+  const data=new DataView(await (await fetch(url)).arrayBuffer()),size=data.byteLength;
+  let xml=null,eocd=-1;
+  for(let i=size-22;i>=Math.max(0,size-65557);i--){if(data.getUint32(i,true)===0x06054b50){eocd=i;break;}}
+  if(eocd<0)throw new Error('Nieprawidłowy plik DOCX.');
+  const count=data.getUint16(eocd+10,true);let cursor=data.getUint32(eocd+16,true);
+  for(let n=0;n<count;n++){
+    if(cursor+46>size||data.getUint32(cursor,true)!==0x02014b50)break;
+    const method=data.getUint16(cursor+10,true),packed=data.getUint32(cursor+20,true),unpacked=data.getUint32(cursor+24,true);
+    const nameLen=data.getUint16(cursor+28,true),extraLen=data.getUint16(cursor+30,true),commentLen=data.getUint16(cursor+32,true),local=data.getUint32(cursor+42,true);
+    const name=new TextDecoder().decode(new Uint8Array(data.buffer,cursor+46,nameLen));
+    cursor+=46+nameLen+extraLen+commentLen;
+    if(name!=='word/document.xml')continue;
+    if(unpacked>10*1024*1024||local+30>size||data.getUint32(local,true)!==0x04034b50)throw new Error('Dokument jest za duży lub uszkodzony.');
+    const start=local+30+data.getUint16(local+26,true)+data.getUint16(local+28,true);
+    if(start+packed>size)throw new Error('Nieprawidłowy dokument Word.');
+    const raw=new Uint8Array(data.buffer,start,packed);
+    const plain=method===0?raw:method===8?new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).arrayBuffer()):null;
+    if(plain)xml=new TextDecoder().decode(plain);break;
   }
+  if(!xml)throw new Error('Nie można odczytać dokumentu Word. Pobierz plik.');
+  const doc=new DOMParser().parseFromString(xml,'application/xml'),paragraphs=[...doc.getElementsByTagNameNS('*','p')].map(p=>[...p.getElementsByTagNameNS('*','t')].map(t=>t.textContent).join('')).filter(Boolean);
+  box.replaceChildren();const article=document.createElement('article');article.className='chat-docx';paragraphs.forEach(line=>{const p=document.createElement('p');p.textContent=line;article.appendChild(p);});box.appendChild(article);
+}
+function closeChatViewer(){const viewer=document.getElementById('chat-viewer');if(!viewer)return;viewer.querySelector('video')?.pause();viewer.hidden=true;document.getElementById('chat-viewer-body').replaceChildren();}
+const chatLive={mode:null,session:null,stream:null,peers:new Map(),seen:new Set(),sessions:[],polling:false};
+async function chatSignal(sessionId,to,kind,payload={}){
+  await pgPost('chat_live_signals',{session_id:sessionId,sender_id:currentUser().id,recipient_id:to,kind,payload});
+}
+function livePeer(otherId,sessionId){
+  const peer=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  peer.onicecandidate=e=>{if(e.candidate)chatSignal(sessionId,otherId,'ice',e.candidate.toJSON()).catch(()=>{});};
+  peer.onconnectionstatechange=()=>{if(['failed','closed','disconnected'].includes(peer.connectionState)){setTimeout(()=>{if(peer.connectionState!=='connected'){peer.close();chatLive.peers.delete(otherId);}},4000);}};
+  chatLive.peers.set(otherId,{peer,pending:[]});return peer;
+}
+async function startChatLive(){
+  if(state.mode!=='cloud')return toast('Transmisja wymaga wspólnej bazy.');
+  if(chatLive.mode==='owner')return stopChatLive();
+  if(chatLive.mode)return toast('Zakończ bieżącą transmisję.');
+  if(!navigator.mediaDevices?.getUserMedia||!window.RTCPeerConnection)return toast('Kamera nie jest dostępna w tej wersji urządzenia.');
+  try{
+    try{chatLive.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:true});}
+    catch(e){chatLive.stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});}
+    const rows=await pgPost('chat_live_sessions',{owner_id:currentUser().id},'return=representation');
+    chatLive.session=rows[0];chatLive.mode='owner';await pollChatLive();
+  }catch(e){chatLive.stream?.getTracks().forEach(t=>t.stop());chatLive.stream=null;toast(`Nie można rozpocząć transmisji: ${e.message}`);}
+}
+async function joinChatLive(id){
+  const session=chatLive.sessions.find(s=>s.id===id);if(!session||chatLive.mode)return;
+  if(!window.RTCPeerConnection)return toast('Odtwarzanie transmisji nie jest dostępne.');
+  try{chatLive.session=session;chatLive.mode='viewer';await chatSignal(id,session.owner_id,'join');showChatLiveBanner(session);}
+  catch(e){chatLive.session=null;chatLive.mode=null;toast(e.message);}
+}
+async function stopChatLive(){
+  const session=chatLive.session,mode=chatLive.mode;
+  if(!mode)return;
+  chatLive.mode=null;chatLive.session=null;
+  chatLive.stream?.getTracks().forEach(t=>t.stop());chatLive.stream=null;
+  for(const [id,p] of chatLive.peers){p.peer.close();if(mode==='viewer'&&session)chatSignal(session.id,id,'leave').catch(()=>{});}
+  chatLive.peers.clear();chatLive.seen.clear();
+  if(mode==='owner'&&session)await pgPatch('chat_live_sessions',`id=eq.${session.id}`,{ended_at:nowISO()}).catch(e=>toast(e.message));
+  const video=document.getElementById('chat-live-video');if(video)video.srcObject=null;
+  const banner=document.getElementById('chat-live-banner');if(banner){banner.hidden=true;banner.replaceChildren();}
+  const start=document.getElementById('chat-live-start');if(start)start.textContent='● LIVE';
+}
+function showChatLiveBanner(session){
+  const box=document.getElementById('chat-live-banner');if(!box)return;
+  const mine=chatLive.mode==='owner'&&chatLive.session?.id===session.id;
+  const watching=chatLive.mode==='viewer'&&chatLive.session?.id===session.id;
+  const mode=mine?'owner':watching?'viewer':'observer';
+  if(box.dataset.session===session.id&&box.dataset.mode===mode&&!box.hidden)return;
+  box.dataset.session=session.id;box.dataset.mode=mode;box.hidden=false;
+  box.innerHTML=`<div class="chat-live-heading"><b>● Transmisja: ${esc(getUser(session.owner_id)?.name||'Pracownik')}</b>${mine||watching?'<button class="smallbtn" id="chat-live-stop">Zakończ</button>':`<button class="smallbtn" data-chat-join="${esc(session.id)}">Oglądaj</button>`}<button class="smallbtn" id="chat-live-full">Pełny ekran</button></div><video id="chat-live-video" ${mine?'muted':''} playsinline autoplay controls></video>`;
+  box.querySelector('[data-chat-join]')?.addEventListener('click',()=>joinChatLive(session.id));
+  box.querySelector('#chat-live-stop')?.addEventListener('click',stopChatLive);
+  box.querySelector('#chat-live-full')?.addEventListener('click',()=>box.querySelector('video')?.requestFullscreen?.().catch(e=>toast(e.message)));
+  if(mine&&chatLive.stream){const video=box.querySelector('video');video.srcObject=chatLive.stream;video.play().catch(()=>{});document.getElementById('chat-live-start').textContent='■ STOP';}
+}
+async function handleChatLiveSignal(sig){
+  if(!chatLive.session||sig.session_id!==chatLive.session.id)return;
+  const other=sig.sender_id,sessionId=chatLive.session.id;
+  if(chatLive.mode==='owner'&&sig.kind==='join'){
+    chatLive.peers.get(other)?.peer.close();const peer=livePeer(other,sessionId);
+    chatLive.stream.getTracks().forEach(track=>peer.addTrack(track,chatLive.stream));
+    const offer=await peer.createOffer();await peer.setLocalDescription(offer);await chatSignal(sessionId,other,'offer',{type:offer.type,sdp:offer.sdp});
+  }else if(chatLive.mode==='viewer'&&sig.kind==='offer'){
+    const peer=chatLive.peers.get(other)?.peer||livePeer(other,sessionId);
+    peer.ontrack=e=>{const video=document.getElementById('chat-live-video');if(video){video.srcObject=e.streams[0];video.play().catch(()=>{});}};
+    await peer.setRemoteDescription(new RTCSessionDescription(sig.payload));
+    const answer=await peer.createAnswer();await peer.setLocalDescription(answer);await chatSignal(sessionId,other,'answer',{type:answer.type,sdp:answer.sdp});
+    for(const ice of chatLive.peers.get(other).pending)await peer.addIceCandidate(ice).catch(()=>{});chatLive.peers.get(other).pending=[];
+  }else if(chatLive.mode==='owner'&&sig.kind==='answer'){
+    const item=chatLive.peers.get(other);if(!item)return;await item.peer.setRemoteDescription(new RTCSessionDescription(sig.payload));for(const ice of item.pending)await item.peer.addIceCandidate(ice).catch(()=>{});item.pending=[];
+  }else if(sig.kind==='ice'){
+    const item=chatLive.peers.get(other);if(!item)return;
+    if(item.peer.remoteDescription)await item.peer.addIceCandidate(new RTCIceCandidate(sig.payload)).catch(()=>{});
+    else item.pending.push(new RTCIceCandidate(sig.payload));
+  }else if(sig.kind==='leave'){chatLive.peers.get(other)?.peer.close();chatLive.peers.delete(other);}
+}
+async function pollChatLive(){
+  if(chatLive.polling||state.tab!=='chat'||state.mode!=='cloud')return;
+  chatLive.polling=true;
+  try{
+    const since=new Date(Date.now()-3600000).toISOString();
+    const sessions=await pgGet(`chat_live_sessions?select=*&ended_at=is.null&started_at=gte.${encodeURIComponent(since)}&order=started_at.desc`);
+    chatLive.sessions=sessions;
+    if(chatLive.mode&&chatLive.session&&!sessions.some(s=>s.id===chatLive.session.id)){await stopChatLive();}
+    const visible=chatLive.session||sessions[0],banner=document.getElementById('chat-live-banner');
+    if(visible)showChatLiveBanner(visible);else if(banner){banner.hidden=true;banner.dataset.session='';}
+    if(chatLive.session){
+      const signals=await pgGet(`chat_live_signals?select=*&recipient_id=eq.${currentUser().id}&session_id=eq.${chatLive.session.id}&order=created_at.desc&limit=300`);
+      for(const sig of signals.reverse()){if(chatLive.seen.has(sig.id))continue;chatLive.seen.add(sig.id);await handleChatLiveSignal(sig);}
+      if(chatLive.seen.size>600)chatLive.seen=new Set([...chatLive.seen].slice(-300));
+    }
+  }catch(e){console.warn('Chat live:',e);}
+  finally{chatLive.polling=false;}
 }
   function renderTasksPage(open,prog,rev,urg,u){
   let tasks=[...state.db.tasks];
@@ -1167,10 +1327,27 @@ setTimeout(()=>{
     window.imperiumChatTimer=setInterval(()=>{
       if(state.tab==='chat' && document.visibilityState!=='hidden'){
         loadChatMessages();
+        pollChatLive();
       }
-    },5000);
+    },3000);
   }
 },100);
+  document.getElementById('chat-attach')?.addEventListener('click',()=>document.getElementById('chat-files')?.click());
+  document.getElementById('chat-files')?.addEventListener('change',e=>{
+    const files=[...e.target.files],too=files.find(f=>!f.size||f.size>50*1024*1024);
+    if(too){toast(`${too.name}: limit 50 MB.`);e.target.value='';return;}
+    const box=document.getElementById('chat-selected');box.hidden=!files.length;box.textContent=files.map(f=>`${f.name} (${bytes(f.size)})`).join(' · ');
+  });
+  document.getElementById('chat-audio-prev')?.addEventListener('click',()=>playChatAudio((chatAudioIndex-1+chatAudioList.length)%chatAudioList.length));
+  document.getElementById('chat-audio-next')?.addEventListener('click',()=>playChatAudio((chatAudioIndex+1)%chatAudioList.length));
+  document.getElementById('chat-audio-toggle')?.addEventListener('click',()=>{const a=document.getElementById('chat-audio-element');if(!a)return;if(a.paused)a.play().catch(e=>toast(e.message));else a.pause();});
+  document.getElementById('chat-audio-stop')?.addEventListener('click',stopChatAudio);
+  document.getElementById('chat-audio-element')?.addEventListener('ended',()=>{if(chatAudioList.length)playChatAudio((chatAudioIndex+1)%chatAudioList.length);});
+  document.getElementById('chat-viewer-close')?.addEventListener('click',closeChatViewer);
+  document.getElementById('chat-viewer-download')?.addEventListener('click',()=>{const v=document.getElementById('chat-viewer');const a=document.createElement('a');a.href=v.dataset.url;a.download=v.dataset.name;a.click();});
+  document.getElementById('chat-viewer-fullscreen')?.addEventListener('click',()=>{const body=document.getElementById('chat-viewer-body');(body.querySelector('video,img')||body).requestFullscreen?.().catch(e=>toast(e.message));});
+  document.getElementById('chat-live-start')?.addEventListener('click',startChatLive);
+  setTimeout(()=>pollChatLive(),0);
   document.getElementById('chat-send')?.addEventListener('click',()=>{
     sendChatMessage();
   });
@@ -1183,7 +1360,7 @@ setTimeout(()=>{
   });
 }
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else if(state.tab==='salary'){render();loadSalaryMonth();}else render();});
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(state.tab==='chat'&&b.dataset.tab!=='chat'){if(chatLive.mode)stopChatLive();stopChatAudio();closeChatViewer();}state.tab=b.dataset.tab;if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else if(state.tab==='salary'){render();loadSalaryMonth();}else render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}state.invoicePdfBlob=null;state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;state.roomId=null;selectedFiles=[];fileInput.value='';render();});
   bindSalary();
