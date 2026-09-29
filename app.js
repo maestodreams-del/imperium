@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], rentalRooms: [], rentalDocuments: [], vouchers: [], inspectionId: null, rentalId: null, roomId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], rentalRooms: [], rentalDocuments: [], invoiceSellers: [], invoiceDrafts: [], invoiceId: null, invoiceLines: [], vouchers: [], inspectionId: null, rentalId: null, roomId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -61,7 +61,7 @@ function seed(){
     attendance:[],
     shifts:[],
     inspections:[],
-    rentals:[],rentalRooms:[],rentalDocuments:[],rentalActions:[],importantAlerts:[],
+    rentals:[],rentalRooms:[],rentalDocuments:[],invoiceSellers:[],invoiceDrafts:[],rentalActions:[],importantAlerts:[],
     events:[
       {id:uid(),type:'system',text:'IMPERIUM uruchomione',userId:'u-admin',taskId:null,createdAt:new Date(t-12000000).toISOString()},
       {id:uid(),type:'claim',text:'Mikołaj przejął zadanie „Odczyt liczników”',userId:'u-mikolaj',taskId:'t2',createdAt:new Date(t-1600000).toISOString()},
@@ -77,7 +77,7 @@ function loadDemoDB(){
       x.disciplinaryRecords ||= [];
       x.coinTransactions ||= [];
       x.inspections ||= [];
-      x.rentals ||= [];x.rentalRooms ||= [];x.rentalDocuments ||= [];x.rentalActions ||= [];x.importantAlerts ||= [];x.importantProgress ||= {};
+      x.rentals ||= [];x.rentalRooms ||= [];x.rentalDocuments ||= [];x.invoiceSellers ||= [];x.invoiceDrafts ||= [];x.rentalActions ||= [];x.importantAlerts ||= [];x.importantProgress ||= {};
       x.vouchers ||= [];
       x.shifts ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
@@ -302,7 +302,7 @@ async function loadCloudDB({silent=false}={}){
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
     if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments,invoiceSellers,invoiceDrafts]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,can_view_important,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -320,13 +320,17 @@ async function loadCloudDB({silent=false}={}){
       pgGet('rental_actions?select=*&order=due_on.asc'),
       pgGet('important_alerts?select=*&resolved_at=is.null&order=due_on.asc'),
       pgGet('rental_rooms?select=*&order=building.asc,floor.asc,room_number.asc'),
-      pgGet('rental_documents?select=*&order=created_at.desc')
+      pgGet('rental_documents?select=*&order=created_at.desc'),
+      pgGet('invoice_sellers?select=*&order=name.asc'),
+      pgGet('invoice_drafts?select=*&order=created_at.desc&limit=500')
     ]);
     state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at,startedBy:a.started_by,endedBy:a.ended_by}));
     state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
     state.rentals=(rentals||[]).map(mapRental);
     state.rentalRooms=(rentalRooms||[]).map(x=>({id:x.id,locationId:x.location_id,building:x.building,floor:x.floor,number:x.room_number,areaSqm:Number(x.area_sqm),hasMeter:x.has_electric_meter,meterReading:x.meter_reading,meterReadOn:x.meter_read_on}));
     state.rentalDocuments=(rentalDocuments||[]).map(x=>({id:x.id,rentalId:x.rental_id,path:x.storage_path,name:x.file_name,size:x.size_bytes}));
+    state.invoiceSellers=(invoiceSellers||[]).map(x=>({id:x.id,name:x.name,nip:x.nip,streetAddress:x.street_address,postalCity:x.postal_city,bankAccount:x.bank_account||''}));
+    state.invoiceDrafts=(invoiceDrafts||[]).map(x=>({id:x.id,sellerId:x.seller_id,rentalId:x.rental_id,number:x.invoice_number,issueDate:x.issue_date,saleDate:x.sale_date,dueDate:x.due_date,buyerName:x.buyer_name,buyerNip:x.buyer_nip,buyerStreet:x.buyer_street,buyerPostalCity:x.buyer_postal_city,lines:x.lines,status:x.status,ksefNumber:x.ksef_number,ksefReference:x.ksef_reference,ksefError:x.ksef_error,issuedXml:x.issued_xml,upoXml:x.upo_xml}));
     state.rentalActions=(rentalActions||[]).map(x=>({id:x.id,rentalId:x.rental_id,kind:x.kind,dueOn:x.due_on,notes:x.notes||'',completedAt:x.completed_at}));
     state.importantAlerts=(importantAlerts||[]).map(x=>({id:x.id,kind:x.kind,sourceId:x.source_id,dueOn:x.due_on,title:x.title,details:x.details,locationId:x.location_id,createdAt:x.created_at,inProgressAt:x.in_progress_at}));
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
@@ -398,6 +402,7 @@ function imperialIcon(id){
     locations:'<svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
     inspections:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="1"/><path d="M8 3v4M16 3v4M8 11h8M8 15h5"/></svg>',
     rentals:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/><path d="M16 17h2"/></svg>',
+    invoices:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3zM8 8h8M8 12h8M8 16h5"/></svg>',
     important:'<svg viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3zM12 9v5M12 17v1"/></svg>',
     activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
@@ -425,8 +430,9 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
-  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
+  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.invoiceSellers=state.db.invoiceSellers||[];state.invoiceDrafts=state.db.invoiceDrafts||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
   if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
+  if(!isAdmin()&&state.tab==='invoices')state.tab='tasks';
   if(!canViewImportant()&&state.tab==='important')state.tab='tasks';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app aureus-shell">
@@ -434,8 +440,8 @@ function render(){
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   bind();
 }
@@ -588,12 +594,20 @@ function rentalCard(r){
   <div class="rental-prices"><div><small>Czynsz za m²</small><b>${rentMoney(r.priceSqmNet)} netto</b><span>${rentMoney(r.priceSqmGross)} brutto</span></div><div><small>Parking</small><b>${rentMoney(r.parkingNet)} netto</b><span>${rentMoney(r.parkingGross)} brutto</span></div><div><small>Internet</small><b>${rentMoney(r.internetNet)} netto</b><span>${rentMoney(r.internetGross)} brutto</span></div></div>
   <div class="rental-total"><span>Miesięcznie łącznie</span><strong>${rentMoney(total.net)} netto<br>${rentMoney(total.gross)} brutto</strong></div>
   <div class="rental-contact">${r.phone?`<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:''}</div>
-  <div class="rental-actions"><div class="subheading">Umowa PDF</div>${docs.map(d=>`<div class="rental-action"><span>📄 ${esc(d.name)} • ${bytes(d.size)}</span><button class="smallbtn" data-view-rental-pdf="${esc(d.id)}">Otwórz</button></div>`).join('')||'<small class="subtle">Brak pliku PDF.</small>'}<button class="smallbtn" data-add-rental-pdf="${esc(r.id)}">+ Dodaj PDF</button></div>
+  <div class="rental-actions"><div class="subheading">Umowa PDF</div>${docs.map(d=>`<div class="rental-action"><span>📄 ${esc(d.name)} • ${bytes(d.size)}</span><button class="smallbtn" data-view-rental-pdf="${esc(d.id)}">Otwórz</button></div>`).join('')||'<small class="subtle">Brak pliku PDF.</small>'}<button class="smallbtn" data-add-rental-pdf="${esc(r.id)}">+ Dodaj PDF</button>${isAdmin()?`<button class="smallbtn gold" data-invoice-rental="${esc(r.id)}">+ Faktura z umowy</button>`:''}</div>
   <div class="rental-actions"><div class="subheading">Planowane dokumenty</div>${state.rentalActions.filter(a=>a.rentalId===r.id).map(a=>`<div class="rental-action"><span>${esc(rentalActionLabel(a.kind))} · ${esc(a.dueOn)}${a.completedAt?' · GOTOWE':''}</span>${!a.completedAt?`<button class="smallbtn" data-edit-rental-action="${esc(a.id)}">Edytuj</button>`:''}</div>`).join('')||'<small class="subtle">Brak zaplanowanych dokumentów.</small>'}<button class="smallbtn gold" data-add-rental-action="${esc(r.id)}">+ Cesja / aneks / wypowiedzenie</button></div></article>`;
 }
 function renderHotelRooms(locId,rentals){
   const rooms=state.rentalRooms.filter(x=>x.locationId===locId);
   return `<div class="hotel-register">${Object.entries(HOTEL_FLOORS).map(([building,floors])=>`<section class="hotel-building"><h3>${esc(building)}</h3>${floors.map(floor=>{const list=rooms.filter(x=>x.building===building&&x.floor===floor);return `<div class="hotel-floor"><div class="hotel-floor-head"><b>${esc(floor)}</b><button class="smallbtn" data-add-room="${esc(building)}" data-floor="${esc(floor)}">+ Pomieszczenie</button></div>${list.map(room=>`<div class="hotel-room"><div><b>${esc(room.number)}</b> · ${esc(room.areaSqm)} m²<br><small>${room.hasMeter?`Licznik prądu: ${room.meterReading==null?'brak odczytu':esc(room.meterReading)} ${room.meterReadOn?`(${esc(room.meterReadOn)})`:''}`:'Bez licznika prądu'}</small></div><div><button class="smallbtn" data-edit-room="${esc(room.id)}">Edytuj</button> <button class="smallbtn" data-room-rental="${esc(room.id)}">+ Umowa</button></div></div>${rentals.filter(r=>r.roomId===room.id).map(rentalCard).join('')}`).join('')||'<small class="subtle">Brak pomieszczeń.</small>'}</div>`}).join('')}</section>`).join('')}</div>`;
+}
+function invoiceDraftTotals(x){try{return window.ImperiumInvoice.calculate(x.lines);}catch(e){return null;}}
+function renderInvoicesPage(){
+  if(!isAdmin())return '';
+  return `<div class="toolbar"><div><div class="eyebrow">SPRZEDAŻ</div><h2 class="section-title">Faktury</h2></div><div class="invoice-buttons"><button class="smallbtn" id="add-invoice-seller">+ Firma wystawiająca</button><button class="goldbtn" id="add-invoice" ${state.invoiceSellers.length?'':'disabled'}>+ Faktura</button></div></div>
+  <div class="status-note">Wystawianie w IMPERIUM → KSeF → dokument dla Optimy. Teraz możesz skonfigurować firmy i przygotować szkice oraz plik FA(3). Wysyłka produkcyjna pojawi się po podłączeniu bezpiecznej usługi KSeF i uprawnień firm.</div>
+  <div class="settings-card"><div class="subheading">Firmy wystawiające</div><div class="invoice-sellers">${state.invoiceSellers.map(s=>`<div class="invoice-seller"><span><b>${esc(s.name)}</b><small>NIP ${esc(s.nip)} · ${esc(s.streetAddress)}, ${esc(s.postalCity)}</small></span><button class="smallbtn" data-edit-invoice-seller="${esc(s.id)}">Edytuj</button></div>`).join('')||'<div class="empty compact">Dodaj firmę, która wystawia faktury.</div>'}</div></div>
+  <div class="settings-card"><div class="subheading">Szkice faktur</div><div class="invoice-list">${state.invoiceDrafts.map(x=>{const t=invoiceDraftTotals(x),s=state.invoiceSellers.find(y=>y.id===x.sellerId);return `<div class="invoice-entry"><div><b>${esc(x.number)}</b><small>${esc(s?.name||'Firma')} → ${esc(x.buyerName)} · ${esc(x.issueDate)}</small><small>${x.ksefNumber?`KSeF: ${esc(x.ksefNumber)}`:esc(({draft:'SZKIC · nie wysłano do KSeF',sending:'WYSYŁANIE · sprawdź status',processing:'KSeF · przetwarzanie',accepted:'PRZYJĘTA W KSeF',rejected:'ODRZUCONA · '+(x.ksefError||'')})[x.status]||x.status)}</small></div><div class="invoice-actions"><strong>${t?rentMoney(t.gross/100):'—'}</strong>${x.status==='draft'?`<button class="smallbtn" data-edit-invoice="${esc(x.id)}">Edytuj</button>`:''}<button class="smallbtn" data-export-invoice="${esc(x.id)}">FA(3) XML</button></div></div>`}).join('')||'<div class="empty compact">Brak szkiców.</div>'}</div></div>`;
 }
 function renderRentalsPage(){
   if(!canManageRentals())return '';
@@ -914,6 +928,7 @@ function taskAssigneeFields(t){
   const selected=t?.assignedTo||t?.claimedBy;
   return `<div class="field"><label>Pracownicy (można wybrać kilku)</label><div class="checkbox-grid task-assignees">${state.db.users.filter(u=>u.role==='worker'&&u.active!==false).map(u=>`<label class="checkrow" data-task-user="${esc(u.id)}"><input type="checkbox" name="task-assignee" value="${esc(u.id)}" ${selected===u.id?'checked':''}> ${esc(u.name)}</label>`).join('')}</div><small class="subtle">Każdy pracownik otrzyma osobne rozliczenie i raport tego samego zadania.</small></div>`;
 }
+function invoiceLineFields(l,i){return `<div class="invoice-line" data-invoice-line="${i}"><div class="field"><label>Usługa / towar</label><input data-il="description" maxlength="250" value="${esc(l.description||'')}"></div><div class="invoice-line-numbers"><div class="field"><label>Ilość</label><input data-il="quantity" type="number" min="0.001" step="0.001" value="${esc(l.quantity??'1')}"></div><div class="field"><label>Jednostka</label><input data-il="unit" maxlength="20" value="${esc(l.unit||'usł.')}"></div><div class="field"><label>Cena netto</label><input data-il="unit_net" type="number" min="0" step="0.01" value="${esc(l.unit_net??'')}"></div><div class="field"><label>VAT</label><select data-il="vat_rate"><option value="">Wybierz</option>${['23','8','5'].map(v=>`<option value="${v}" ${String(l.vat_rate)===v?'selected':''}>${v}%</option>`).join('')}</select></div></div><button class="smallbtn" data-remove-invoice-line="${i}">Usuń pozycję</button></div>`;}
 function renderModal(){
   if(!state.modal)return '';
   if(state.modal==='cloudSetup')return renderCloudSetupModal();
@@ -921,6 +936,17 @@ function renderModal(){
   if(state.modal==='addDiscipline')return renderDisciplineModal();
   if(state.modal==='coinAdjust')return renderCoinModal();
   const close='<button class="ghost" data-close>Anuluj</button>';
+  if(state.modal==='invoiceSeller'){
+    const s=state.invoiceSellers.find(x=>x.id===state.invoiceId);
+    return `<div class="modal-bg"><div class="modal"><h2>${s?'Dane sprzedawcy':'Nowa firma wystawiająca'}</h2><div class="formgrid"><div class="field"><label>Nazwa firmy</label><input id="f-seller-name" maxlength="200" value="${esc(s?.name||'')}"></div><div class="field"><label>NIP</label><input id="f-seller-nip" inputmode="numeric" maxlength="10" value="${esc(s?.nip||'')}"></div><div class="field"><label>Ulica i numer</label><input id="f-seller-street" maxlength="250" value="${esc(s?.streetAddress||'')}"></div><div class="field"><label>Kod pocztowy i miejscowość</label><input id="f-seller-city" maxlength="150" value="${esc(s?.postalCity||'')}"></div><div class="field"><label>Rachunek bankowy (opcjonalnie)</label><input id="f-seller-bank" maxlength="64" value="${esc(s?.bankAccount||'')}"></div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-invoice-seller">Zapisz firmę</button></div></div></div>`;
+  }
+  if(state.modal==='invoiceDraft'){
+    const x=state.invoiceDrafts.find(y=>y.id===state.invoiceId),today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}),r=state.rentals.find(y=>y.id===(x?.rentalId||state.invoiceRentalId));
+    const sellers=state.invoiceSellers,lines=state.invoiceLines.length?state.invoiceLines:(x?.lines||[{description:'',unit:'usł.',quantity:'1',unit_net:'',vat_rate:''}]);
+    return `<div class="modal-bg"><div class="modal invoice-modal"><h2>${x?'Edytuj szkic faktury':'Nowy szkic faktury'}</h2><div class="modal-sub">Faktura będzie wystawiona w IMPERIUM. Stawkę VAT dla każdej pozycji wybierz po sprawdzeniu umowy.</div><div class="formgrid"><div class="field"><label>Firma wystawiająca</label><select id="f-invoice-seller">${sellers.map(s=>`<option value="${esc(s.id)}" ${s.id===x?.sellerId?'selected':''}>${esc(s.name)} · ${esc(s.nip)}</option>`).join('')}</select></div><div class="field"><label>Umowa najmu (opcjonalnie)</label><select id="f-invoice-rental"><option value="">Bez umowy</option>${state.rentals.map(y=>`<option value="${esc(y.id)}" ${y.id===r?.id?'selected':''}>${esc(y.contractor)} · ${esc(getLoc(y.locationId)?.name||'')}</option>`).join('')}</select></div><div class="field"><label>Numer faktury</label><input id="f-invoice-number" maxlength="80" value="${esc(x?.number||'')}"></div><div class="field"><label>Data wystawienia</label><input id="f-invoice-issued" type="date" value="${esc(x?.issueDate||today)}"></div><div class="field"><label>Data sprzedaży</label><input id="f-invoice-sale" type="date" value="${esc(x?.saleDate||today)}"></div><div class="field"><label>Termin płatności</label><input id="f-invoice-due" type="date" value="${esc(x?.dueDate||today)}"></div></div>
+    <div class="rental-form-section">Nabywca</div><div class="formgrid"><div class="field"><label>Nazwa</label><input id="f-invoice-buyer" maxlength="200" value="${esc(x?.buyerName||r?.contractor||'')}"></div><div class="field"><label>NIP</label><input id="f-invoice-nip" inputmode="numeric" maxlength="10" value="${esc(x?.buyerNip||r?.nip||'')}"></div><div class="field"><label>Adres rejestrowy: ulica i numer</label><input id="f-invoice-street" maxlength="250" value="${esc(x?.buyerStreet||'')}"></div><div class="field"><label>Kod pocztowy i miejscowość</label><input id="f-invoice-city" maxlength="150" value="${esc(x?.buyerPostalCity||'')}"></div></div>
+    <div class="rental-form-section">Pozycje · PLN netto</div><div id="invoice-lines">${lines.map((l,i)=>invoiceLineFields(l,i)).join('')}</div><button class="smallbtn" id="add-invoice-line">+ Pozycja</button><div class="rental-live-total" id="invoice-live-total"></div><div class="modal-actions">${x?'<button class="dangerbtn" id="delete-invoice">Usuń szkic</button>':''}${close}<button class="goldbtn" id="save-invoice">Zapisz szkic</button></div></div></div>`;
+  }
   if(state.modal==='room'){
     const room=state.rentalRooms.find(x=>x.id===state.roomId),building=room?.building||state.roomBuilding||'Smolańska 3',floor=room?.floor||state.roomFloor||'Parter';
     return `<div class="modal-bg"><div class="modal"><h2>${room?'Edytuj pomieszczenie':'Nowe pomieszczenie'}</h2><div class="modal-sub">${esc(building)} / ${esc(floor)}</div><div class="formgrid"><div class="field"><label>Numer / nazwa pomieszczenia</label><input id="f-room-number" maxlength="80" value="${esc(room?.number||'')}"></div><div class="field"><label>Powierzchnia (m²)</label><input id="f-room-area" type="number" min="0.01" step="0.01" value="${room?.areaSqm??''}"></div></div><label class="checkrow"><input id="f-room-meter" type="checkbox" ${room?.hasMeter?'checked':''}> Licznik energii elektrycznej</label><div class="formgrid" id="room-meter-fields"><div class="field"><label>Stan licznika</label><input id="f-room-reading" type="number" min="0" step="0.001" value="${room?.meterReading??''}"></div><div class="field"><label>Data odczytu</label><input id="f-room-read-on" type="date" value="${esc(room?.meterReadOn||'')}"></div></div><div class="modal-actions">${room&&isAdmin()?'<button class="dangerbtn" id="delete-room">Usuń pomieszczenie</button>':''}${close}<button class="goldbtn" id="save-room">Zapisz</button></div></div></div>`;
@@ -1017,6 +1043,21 @@ setTimeout(()=>{
   document.getElementById('add-inspection')?.addEventListener('click',()=>{state.inspectionId=null;state.modal='newInspection';render();});
   document.querySelectorAll('[data-rental-location]').forEach(b=>b.onclick=()=>{state.rentalLocationId=b.dataset.rentalLocation;render();});
   document.getElementById('add-rental')?.addEventListener('click',()=>{state.rentalId=null;state.roomId=null;state.modal='newRental';render();});
+  document.getElementById('add-invoice-seller')?.addEventListener('click',()=>{state.invoiceId=null;state.modal='invoiceSeller';render();});
+  document.querySelectorAll('[data-edit-invoice-seller]').forEach(b=>b.onclick=()=>{state.invoiceId=b.dataset.editInvoiceSeller;state.modal='invoiceSeller';render();});
+  document.getElementById('save-invoice-seller')?.addEventListener('click',saveInvoiceSeller);
+  document.getElementById('add-invoice')?.addEventListener('click',()=>{state.invoiceId=null;state.invoiceRentalId=null;state.invoiceLines=[{description:'',unit:'usł.',quantity:'1',unit_net:'',vat_rate:''}];state.modal='invoiceDraft';render();});
+  document.querySelectorAll('[data-edit-invoice]').forEach(b=>b.onclick=()=>{state.invoiceId=b.dataset.editInvoice;state.invoiceLines=[];state.modal='invoiceDraft';render();});
+  document.querySelectorAll('[data-invoice-rental]').forEach(b=>b.onclick=()=>{const r=state.rentals.find(x=>x.id===b.dataset.invoiceRental);if(!r)return;state.invoiceId=null;state.invoiceRentalId=r.id;state.invoiceLines=invoiceLineDefaults(r);state.tab='invoices';state.modal=state.invoiceSellers.length?'invoiceDraft':null;render();if(!state.invoiceSellers.length)toast('Najpierw dodaj firmę wystawiającą faktury.');});
+  document.querySelectorAll('[data-export-invoice]').forEach(b=>b.onclick=()=>exportInvoiceXml(b.dataset.exportInvoice));
+  document.getElementById('save-invoice')?.addEventListener('click',saveInvoiceDraft);
+  document.getElementById('delete-invoice')?.addEventListener('click',deleteInvoiceDraft);
+  document.getElementById('add-invoice-line')?.addEventListener('click',()=>{state.invoiceLines=readInvoiceLines();state.invoiceLines.push({description:'',unit:'usł.',quantity:'1',unit_net:'',vat_rate:''});render();});
+  document.querySelectorAll('[data-remove-invoice-line]').forEach(b=>b.onclick=()=>{state.invoiceLines=readInvoiceLines().filter((_,i)=>i!==Number(b.dataset.removeInvoiceLine));if(!state.invoiceLines.length)state.invoiceLines=[{description:'',unit:'usł.',quantity:'1',unit_net:'',vat_rate:''}];render();});
+  document.getElementById('f-invoice-rental')?.addEventListener('change',e=>fillInvoiceRental(e.target.value));
+  document.getElementById('invoice-lines')?.addEventListener('input',updateInvoiceTotal);
+  document.getElementById('invoice-lines')?.addEventListener('change',updateInvoiceTotal);
+  updateInvoiceTotal();
   document.querySelectorAll('[data-add-room]').forEach(b=>b.onclick=()=>{state.roomId=null;state.roomBuilding=b.dataset.addRoom;state.roomFloor=b.dataset.floor;state.modal='room';render();});
   document.querySelectorAll('[data-edit-room]').forEach(b=>b.onclick=()=>{state.roomId=b.dataset.editRoom;state.modal='room';render();});
   document.querySelectorAll('[data-room-rental]').forEach(b=>b.onclick=()=>{state.roomId=b.dataset.roomRental;state.rentalId=null;state.modal='newRental';render();});
@@ -1218,6 +1259,48 @@ async function failTask(){
 async function resetTask(){
   const t=state.db.tasks.find(x=>x.id===state.taskId);if(!confirm('Zwolnić wykonawcę i ustawić zadanie jako nowe?'))return;
   await withAction('Resetowanie zadania…',async()=>{if(state.mode==='demo'){Object.assign(t,{status:'open',claimedBy:null,claimedAt:null,deadlineAt:null,completedAt:null,report:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);saveDemoDB();}else{await pgPatch('tasks',`id=eq.${t.id}`,{status:'open',claimed_by:null,claimed_at:null,deadline_at:null,report_text:null,report_submitted_at:null,completed_at:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);await loadCloudDB({silent:true});}state.modal='detail';});
+}
+function invoiceLineDefaults(r){return [
+  {description:`Czynsz najmu${r.premisesNumber?' · lokal '+r.premisesNumber:''}`,unit:'m²',quantity:String(r.areaSqm),unit_net:String(r.priceSqmNet),vat_rate:''},
+  ...(r.parkingNet?[{description:'Parking',unit:'usł.',quantity:'1',unit_net:String(r.parkingNet),vat_rate:''}]:[]),
+  ...(r.internetNet?[{description:'Internet',unit:'usł.',quantity:'1',unit_net:String(r.internetNet),vat_rate:''}]:[])
+];}
+function readInvoiceLines(){return [...document.querySelectorAll('[data-invoice-line]')].map(row=>Object.fromEntries(['description','quantity','unit','unit_net','vat_rate'].map(k=>[k,row.querySelector(`[data-il="${k}"]`)?.value.trim()||''])));}
+function updateInvoiceTotal(){const el=document.getElementById('invoice-live-total');if(!el)return;try{const t=window.ImperiumInvoice.calculate(readInvoiceLines());el.innerHTML=`Suma: <b>${rentMoney(t.net/100)} netto</b> + VAT ${rentMoney(t.vat/100)} = <b>${rentMoney(t.gross/100)} brutto</b>`;}catch(e){el.textContent='Uzupełnij pozycje i wybierz stawki VAT.';}}
+function fillInvoiceRental(id){
+  const r=state.rentals.find(x=>x.id===id);if(!r)return;
+  document.getElementById('f-invoice-buyer').value=r.contractor;
+  document.getElementById('f-invoice-nip').value=r.nip||'';
+  state.invoiceLines=invoiceLineDefaults(r);
+  document.getElementById('invoice-lines').innerHTML=state.invoiceLines.map(invoiceLineFields).join('');
+  updateInvoiceTotal();
+}
+async function saveInvoiceSeller(){
+  if(!isAdmin())return;
+  const old=state.invoiceSellers.find(x=>x.id===state.invoiceId),value={name:document.getElementById('f-seller-name').value.trim(),nip:document.getElementById('f-seller-nip').value.trim(),streetAddress:document.getElementById('f-seller-street').value.trim(),postalCity:document.getElementById('f-seller-city').value.trim(),bankAccount:document.getElementById('f-seller-bank').value.trim()};
+  if(!value.name||!value.streetAddress||!value.postalCity||!window.ImperiumInvoice.validNip(value.nip))return toast('Wpisz nazwę, poprawny NIP i pełny adres firmy.');
+  await withAction('Zapisywanie firmy…',async()=>{
+    if(state.mode==='demo'){if(old)Object.assign(old,value);else state.db.invoiceSellers.push({id:uid(),...value});saveDemoDB();}
+    else{const row={name:value.name,nip:value.nip,street_address:value.streetAddress,postal_city:value.postalCity,bank_account:value.bankAccount};if(old)await pgPatch('invoice_sellers',`id=eq.${encodeURIComponent(old.id)}`,row);else await pgPost('invoice_sellers',row);await loadCloudDB({silent:true});}
+    state.modal=null;state.invoiceId=null;
+  });
+}
+async function saveInvoiceDraft(){
+  if(!isAdmin())return;
+  const old=state.invoiceDrafts.find(x=>x.id===state.invoiceId),v={sellerId:document.getElementById('f-invoice-seller').value,rentalId:document.getElementById('f-invoice-rental').value||null,number:document.getElementById('f-invoice-number').value.trim(),issueDate:document.getElementById('f-invoice-issued').value,saleDate:document.getElementById('f-invoice-sale').value,dueDate:document.getElementById('f-invoice-due').value,buyerName:document.getElementById('f-invoice-buyer').value.trim(),buyerNip:document.getElementById('f-invoice-nip').value.trim(),buyerStreet:document.getElementById('f-invoice-street').value.trim(),buyerPostalCity:document.getElementById('f-invoice-city').value.trim(),lines:readInvoiceLines()};
+  if(!v.number||!v.issueDate||!v.saleDate||!v.dueDate||v.dueDate<v.issueDate||!v.buyerName||!v.buyerStreet||!v.buyerPostalCity||!window.ImperiumInvoice.validNip(v.buyerNip))return toast('Uzupełnij numer, daty i pełne dane nabywcy z poprawnym NIP.');
+  if(state.invoiceDrafts.some(x=>x.id!==old?.id&&x.sellerId===v.sellerId&&x.number===v.number))return toast('Ta firma ma już fakturę o takim numerze.');
+  try{window.ImperiumInvoice.generate(v,state.invoiceSellers.find(x=>x.id===v.sellerId));}catch(e){return toast(e.message);}
+  await withAction('Zapisywanie szkicu…',async()=>{
+    if(state.mode==='demo'){if(old)Object.assign(old,v);else state.db.invoiceDrafts.unshift({id:uid(),status:'draft',...v});saveDemoDB();}
+    else{const row={seller_id:v.sellerId,rental_id:v.rentalId,invoice_number:v.number,issue_date:v.issueDate,sale_date:v.saleDate,due_date:v.dueDate,buyer_name:v.buyerName,buyer_nip:v.buyerNip,buyer_street:v.buyerStreet,buyer_postal_city:v.buyerPostalCity,lines:v.lines};if(old)await pgPatch('invoice_drafts',`id=eq.${encodeURIComponent(old.id)}`,row);else await pgPost('invoice_drafts',{...row,created_by:currentUser().id});await loadCloudDB({silent:true});}
+    state.invoiceId=null;state.invoiceLines=[];state.modal=null;
+  });
+}
+async function deleteInvoiceDraft(){const x=state.invoiceDrafts.find(y=>y.id===state.invoiceId);if(!isAdmin()||!x||!confirm('Usunąć szkic faktury?'))return;await withAction('Usuwanie szkicu…',async()=>{if(state.mode==='demo'){state.db.invoiceDrafts=state.db.invoiceDrafts.filter(y=>y.id!==x.id);saveDemoDB();}else{await pgDelete('invoice_drafts',`id=eq.${encodeURIComponent(x.id)}`);await loadCloudDB({silent:true});}state.modal=null;state.invoiceId=null;});}
+function exportInvoiceXml(id){
+  const invoice=state.invoiceDrafts.find(x=>x.id===id),seller=state.invoiceSellers.find(x=>x.id===invoice?.sellerId);if(!invoice||!seller)return;
+  try{const xml=invoice.issuedXml||window.ImperiumInvoice.generate(invoice,seller),blob=new Blob([xml],{type:'application/xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`FA3-${invoice.number.replace(/[^a-zA-Z0-9._-]+/g,'_')}.xml`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e){toast(e.message);}
 }
 function rentalNumber(id){return Number(document.getElementById(id)?.value||0);}
 function updateRoomMeterFields(){const box=document.getElementById('room-meter-fields');if(box)box.hidden=!document.getElementById('f-room-meter').checked;}
