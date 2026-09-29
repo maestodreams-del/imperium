@@ -13,6 +13,7 @@ const syncChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('imper
 
 let selectedFiles = [];
 let pollTimer = null;
+let registeredPushKey = '', currentPushToken = '';
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', modal: null, taskId: null, locationId: null, userId: null,
@@ -195,6 +196,8 @@ async function signUpCloud(name,email,password){
   else { toast('Konto utworzone. Jeśli w Supabase włączono potwierdzenie e-mail, potwierdź adres i zaloguj się.'); }
 }
 async function signOutCloud(){
+  if(currentPushToken){try{await cloudFetch('/rest/v1/rpc/unregister_push_token',{method:'POST',body:{p_token:currentPushToken}});}catch(e){}}
+  registeredPushKey='';currentPushToken='';
   try{await cloudFetch('/auth/v1/logout',{method:'POST'});}catch(e){}
   localStorage.removeItem(AUTH_KEY); state.auth=null; state.db=null; stopPolling(); render();
 }
@@ -268,6 +271,7 @@ async function loadCloudDB({silent=false}={}){
     state.lastEventAt=newest; state.cloudError=''; state.loading=false;
     if(!silent){
   checkImperiumUpdate().catch(()=>{});
+  window.imperiumRequestPushToken?.();
 }
     if(!silent || (!state.modal && state.tab!=='chat')) render();
     if(isAdmin() && state.db.locations.length===0){ try{await cloudFetch('/rest/v1/rpc/seed_default_locations',{method:'POST',body:{}});await sleep(300);return loadCloudDB({silent:false});}catch(e){} }
@@ -275,8 +279,22 @@ async function loadCloudDB({silent=false}={}){
 }
 async function logEvent(type,text,taskId=null){
   if(state.mode==='demo'){ state.db.events.unshift({id:uid(),type,text,userId:currentUser()?.id||null,taskId,createdAt:nowISO()}); saveDemoDB(); return; }
-  await pgPost('events',{event_type:type,actor_id:currentUser()?.id||null,task_id:taskId,message:text});
+  const rows=await pgPost('events',{event_type:type,actor_id:currentUser()?.id||null,task_id:taskId,message:text},'return=representation');
+  if(rows?.[0]?.id) cloudFetch('/functions/v1/send-push',{method:'POST',body:{event_id:rows[0].id}})
+    .catch(e=>console.warn('IMPERIUM push:',e));
 }
+window.imperiumRequestPushToken=()=>{
+  if(state.mode==='cloud'&&state.auth?.access_token&&window.AndroidBridge?.requestPushToken)
+    window.AndroidBridge.requestPushToken();
+};
+window.imperiumPushToken=async token=>{
+  if(state.mode!=='cloud'||!state.auth?.user?.id||!token)return;
+  currentPushToken=String(token);
+  const key=`${state.auth.user.id}:${currentPushToken}`;
+  if(registeredPushKey===key)return;
+  try{await cloudFetch('/rest/v1/rpc/register_push_token',{method:'POST',body:{p_token:currentPushToken}});registeredPushKey=key;}
+  catch(e){console.warn('IMPERIUM token:',e);}
+};
 function startPolling(){ stopPolling(); if(state.mode!=='cloud'||!state.auth)return; pollTimer=setInterval(()=>{if(!state.modal && document.visibilityState!=='hidden')loadCloudDB({silent:true}).catch(()=>{});},BASE_CFG.POLL_INTERVAL_MS||10000); }
 function stopPolling(){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
 

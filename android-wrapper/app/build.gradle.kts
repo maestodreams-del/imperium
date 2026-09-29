@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -20,8 +21,8 @@ android {
         minSdk = 26
         targetSdk = 35
 
-        versionCode = 14
-versionName = "5.2.7"
+        versionCode = 15
+        versionName = "5.3.0"
     }
 
     buildTypes {
@@ -30,4 +31,9 @@ versionName = "5.2.7"
             isMinifyEnabled = false
         }
     }
+}
+
+dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-messaging")
 }
