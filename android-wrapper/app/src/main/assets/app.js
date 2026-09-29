@@ -550,7 +550,7 @@ function bindSalary(){
     try{
       if(state.mode==='demo'){state.db.salaryAdjustments.push({id:uid(),profile_id:worker.id,month_start:month,amount_grosz:sign*amount,reason,kind:'manual',created_at:nowISO()});saveDemoDB();}
       else{await cloudFetch('/rest/v1/rpc/salary_add_adjustment',{method:'POST',body:{p_profile:worker.id,p_month:month,p_amount_grosz:sign*amount,p_reason:reason}});await loadSalaryMonth({refresh:true});}
-      if(state.tab==='salary'&&salaryWorker()?.id===worker.id&&salaryMonthKey()===month){document.getElementById('salary-amount').value='';document.getElementById('salary-reason').value='';updateSalaryView();}
+      if(state.tab==='salary'&&salaryWorker()?.id===worker.id&&salaryMonthKey()===month){const amountField=document.getElementById('salary-amount'),reasonField=document.getElementById('salary-reason');if(amountField)amountField.value='';if(reasonField)reasonField.value='';updateSalaryView();}
     }catch(error){toast(error.message||'Nie udało się zapisać korekty.');}
     finally{state.salarySaving=false;updateSalaryControls();}
   });
