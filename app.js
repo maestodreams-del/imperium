@@ -580,84 +580,71 @@ function bindSalary(){
   });
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
+let chatFiles=[], chatRows=[], chatBusy=false, chatLoading=false, chatFingerprint='';
+let chatAudio=null, chatAudioIndex=-1, chatAudioUrl=null, chatPreviewCleanup=null;
+
 function renderChatPage(){
-  const u=currentUser();
-  return `<section class="chat-page comms-page">
-    <div class="panel chat-panel comms-panel">
-      <div class="chat-header comms-header">
-        <div class="comms-title"><div class="comms-emblem">${imperialIcon('chat')}</div><div><div class="eyebrow">SECURE COMMUNICATION CHANNEL</div><h3>IMPERIUM // GENERAL</h3></div></div>
-        <div class="comms-state"><i></i><span>ONLINE</span></div>
-      </div>
-      <div id="chat-messages" class="chat-messages comms-stream"><div class="empty">Synchronizacja kanału…</div></div>
-      <div class="chat-compose comms-compose">
-        <div class="comms-input-wrap"><span class="comms-prompt">›</span><textarea id="chat-input" maxlength="2000" rows="1" placeholder="Wiadomość do kanału…"></textarea></div>
-        <button class="comms-send" id="chat-send" type="button" aria-label="Wyślij"><span>WYŚLIJ</span><b>↗</b></button>
-      </div>
-    </div>
-  </section>`;
+  return `<section class="chat-page comms-page"><div class="panel chat-panel comms-panel">
+    <div class="chat-header comms-header"><div class="comms-title"><div class="comms-emblem">${imperialIcon('chat')}</div><div><div class="eyebrow">SECURE COMMUNICATION CHANNEL</div><h3>IMPERIUM // GENERAL</h3></div></div></div>
+    <div id="chat-player" class="chat-player" hidden></div>
+    <div id="chat-messages" class="chat-messages comms-stream"><div class="empty">Synchronizacja kanału…</div></div>
+    <div id="chat-preview" class="chat-preview" hidden></div><div id="chat-file-list" class="chat-file-list"></div>
+    <div class="chat-compose comms-compose"><button id="chat-attach" class="smallbtn chat-attach" aria-label="Dodaj załączniki">📎</button><input id="chat-files" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.odt,.ods,.txt,.zip,.rar" multiple hidden>
+      <div class="comms-input-wrap"><span class="comms-prompt">›</span><textarea id="chat-input" maxlength="2000" rows="1" placeholder="Wiadomość do kanału…"></textarea></div><button class="comms-send" id="chat-send" type="button" aria-label="Wyślij"><span>WYŚLIJ</span><b>↗</b></button></div></div></section>`;
 }
-  async function loadChatMessages(){
-  if(state.mode!=='cloud') return;
-
-  const box=document.getElementById('chat-messages');
-  if(!box)return;
-
-  try{
-    const rows=await pgGet(
-      'chat_messages',
-      'select=id,user_id,message,created_at&order=created_at.asc&limit=200'
-    );
-
-    const wasNearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<90;
-    box.innerHTML=rows.length
-      ? rows.map(m=>{
-          const author=getUser(m.user_id), mine=m.user_id===currentUser()?.id;
-          const d=new Date(m.created_at);
-          return `<div class="chat-message ${mine?'mine':''}">
-            <div class="chat-avatar">${initials(author?.name||'P')}</div>
-            <div class="chat-bubble"><div class="chat-message-head"><b>${mine?'TY':esc(author?.name||'Pracownik')}</b><span>${d.toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'})}</span></div><div class="chat-message-text">${esc(m.message)}</div></div>
-          </div>`;
-        }).join('')
-      : '<div class="empty">Kanał jest pusty. Wyślij pierwszą wiadomość.</div>';
-    if(wasNearBottom||!box.dataset.loaded) box.scrollTop=box.scrollHeight;
-    box.dataset.loaded='1';
-
-  }catch(e){
-    box.innerHTML=`<div class="status-note danger-text">Błąd czatu: ${esc(e.message)}</div>`;
-  }
+function chatFileKind(a){const t=a.type||'',n=a.name.toLowerCase();return t.startsWith('image/')?'image':t.startsWith('video/')?'video':t.startsWith('audio/')?'audio':n.endsWith('.pdf')?'pdf':n.endsWith('.docx')?'word':'file';}
+function chatAllFiles(){return chatRows.flatMap(m=>Array.isArray(m.attachments)?m.attachments:[]);}
+async function loadChatMessages(){
+  if(state.mode!=='cloud'||chatLoading)return;const box=document.getElementById('chat-messages');if(!box)return;chatLoading=true;
+  try{const rows=(await pgGet('chat_messages?select=id,user_id,message,attachments,created_at&order=created_at.desc&limit=200')).reverse();
+    if(!box.isConnected)return;const fingerprint=JSON.stringify(rows);chatRows=rows;
+    if(fingerprint===chatFingerprint&&box.dataset.loaded)return;chatFingerprint=fingerprint;
+    const near=box.scrollHeight-box.scrollTop-box.clientHeight<90,top=box.scrollTop;
+    box.innerHTML=rows.length?rows.map(m=>{const author=getUser(m.user_id),mine=m.user_id===currentUser()?.id;return `<div class="chat-message ${mine?'mine':''}"><div class="chat-avatar">${initials(author?.name||'P')}</div><div class="chat-bubble"><div class="chat-message-head"><b>${mine?'TY':esc(author?.name||'Pracownik')}</b><span>${new Date(m.created_at).toLocaleString('pl-PL')}</span>${mine?`<button class="chat-delete" data-chat-delete="${esc(m.id)}" aria-label="Usuń swoją wiadomość">✕</button>`:''}</div><div class="chat-message-text">${esc(m.message)}</div><div class="chat-attachments">${(Array.isArray(m.attachments)?m.attachments:[]).map(a=>`<button class="chat-file" data-chat-file="${esc(a.path)}">${({image:'▧',video:'▶',audio:'♫',pdf:'PDF',word:'W',file:'▤'})[chatFileKind(a)]} ${esc(a.name)} <small>${Math.ceil(a.size/1024)} KB</small></button>`).join('')}</div></div></div>`;}).join(''):'<div class="empty">Kanał jest pusty. Wyślij pierwszą wiadomość.</div>';
+    box.scrollTop=near||!box.dataset.loaded?box.scrollHeight:top;box.dataset.loaded='1';
+    box.querySelectorAll('[data-chat-delete]').forEach(b=>b.onclick=()=>deleteChatMessage(b.dataset.chatDelete));
+    box.querySelectorAll('[data-chat-file]').forEach(b=>b.onclick=()=>openChatFile(b.dataset.chatFile));
+  }catch(e){if(!box.dataset.loaded)box.innerHTML=`<div class="status-note danger-text">Błąd czatu: ${esc(e.message)}</div>`;}finally{chatLoading=false;}
 }
-
+function drawChatFiles(){const box=document.getElementById('chat-file-list');if(!box)return;box.innerHTML=chatFiles.map((f,i)=>`<span>${esc(f.name)} <button data-chat-remove="${i}" aria-label="Usuń załącznik">✕</button></span>`).join('');box.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(chatBusy)return;chatFiles.splice(Number(b.dataset.chatRemove),1);drawChatFiles();});}
 async function sendChatMessage(){
-  if(state.mode!=='cloud'){
-    toast('Czat działa we wspólnej bazie.');
-    return;
-  }
-
-  const input=document.getElementById('chat-input');
-  if(!input)return;
-
-  const message=input.value.trim();
-  if(!message)return;
-
-  const button=document.getElementById('chat-send');
-  if(button)button.disabled=true;
-
-  try{
-    await pgPost('chat_messages',{
-      user_id:currentUser().id,
-      message
-    });
-
-    input.value='';
-    await loadChatMessages();
-
-  }catch(e){
-    toast(`Nie udało się wysłać: ${e.message}`);
-
-  }finally{
-    if(button)button.disabled=false;
-    input.focus();
-  }
+  if(state.mode!=='cloud')return toast('Czat działa we wspólnej bazie.');if(chatBusy)return;
+  const input=document.getElementById('chat-input');if(!input)return;const message=input.value.trim(),files=chatFiles.slice();if(!message&&!files.length)return;
+  const max=(BASE_CFG.MAX_ATTACHMENT_MB||50)*1024*1024;if(files.length>10||files.some(f=>f.size>max))return toast('Maksymalnie 10 plików, każdy do '+(BASE_CFG.MAX_ATTACHMENT_MB||50)+' MB.');
+  chatBusy=true;const button=document.getElementById('chat-send');button.disabled=true;const uploaded=[];
+  try{for(const f of files){const path=`${currentUser().id}/${crypto.randomUUID()}/${safeFileName(f.name)}`;await cloudFetch(`/storage/v1/object/chat-files/${encodeStoragePath(path)}`,{method:'POST',body:f,headers:{'Content-Type':f.type||'application/octet-stream'},raw:true});uploaded.push({path,name:f.name,size:f.size,type:f.type||'application/octet-stream'});}
+    await pgPost('chat_messages',{user_id:currentUser().id,message:message||'📎',attachments:uploaded});input.value='';chatFiles=[];drawChatFiles();await loadChatMessages();
+  }catch(e){for(const a of uploaded)await cloudFetch(`/storage/v1/object/chat-files/${encodeStoragePath(a.path)}`,{method:'DELETE',raw:true}).catch(()=>{});toast(`Nie udało się wysłać: ${e.message}`);}finally{chatBusy=false;if(button.isConnected)button.disabled=false;}
+}
+async function deleteChatMessage(id){const m=chatRows.find(m=>m.id===id&&m.user_id===currentUser()?.id);if(!m||!confirm('Usunąć swoją wiadomość dla wszystkich?'))return;
+  try{const deleted=await cloudFetch(`/rest/v1/rpc/delete_own_chat_message`,{method:'POST',body:{p_id:id}});for(const a of deleted||[])await cloudFetch(`/storage/v1/object/chat-files/${encodeStoragePath(a.path)}`,{method:'DELETE',raw:true}).catch(()=>{});stopChatAudio();closeChatPreview();await loadChatMessages();}catch(e){toast(e.message);}}
+async function chatBlob(a){return (await cloudFetch(`/storage/v1/object/authenticated/chat-files/${encodeStoragePath(a.path)}`,{raw:true})).blob();}
+function closeChatPreview(){chatPreviewCleanup?.();chatPreviewCleanup=null;const box=document.getElementById('chat-preview');if(box){box.replaceChildren();box.hidden=true;}}
+async function openChatFile(path){const a=chatAllFiles().find(a=>a.path===path);if(!a)return;if(chatFileKind(a)==='audio')return playChatAudio(path);
+  closeChatPreview();const box=document.getElementById('chat-preview');if(!box)return;box.hidden=false;box.innerHTML='<p>Ładowanie…</p>';let cancelled=false,url=null,pdf=null;chatPreviewCleanup=()=>{cancelled=true;if(url)URL.revokeObjectURL(url);pdf?.destroy();box.querySelector('video')?.pause();};
+  try{const blob=await chatBlob(a);if(cancelled)return;url=URL.createObjectURL(blob);box.innerHTML=`<div class="chat-preview-head"><b>${esc(a.name)}</b><a href="${esc(url)}" download="${esc(a.name)}">Pobierz</a><button id="chat-preview-close">✕</button></div><div class="chat-preview-body"></div>`;box.querySelector('#chat-preview-close').onclick=closeChatPreview;const body=box.querySelector('.chat-preview-body'),kind=chatFileKind(a);
+    if(kind==='image'){body.innerHTML=`<img src="${esc(url)}" alt="${esc(a.name)}">`;}
+    else if(kind==='video'){body.innerHTML=`<video controls playsinline src="${esc(url)}"></video><button class="smallbtn">Pełny ekran</button>`;body.querySelector('button').onclick=()=>body.querySelector('video').requestFullscreen?.().catch(()=>toast('Pełny ekran niedostępny.'));}
+    else if(kind==='pdf'){const js=await import('./pdf.min.mjs');js.GlobalWorkerOptions.workerSrc='./pdf.worker.min.mjs';pdf=await js.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;
+      for(let n=1;n<=pdf.numPages&&!cancelled;n++){const p=await pdf.getPage(n),base=p.getViewport({scale:1}),v=p.getViewport({scale:Math.min(2,(body.clientWidth||320)/base.width)}),canvas=document.createElement('canvas');canvas.width=v.width;canvas.height=v.height;body.appendChild(canvas);await p.render({canvasContext:canvas.getContext('2d'),viewport:v}).promise;}}
+    else if(kind==='word'){const xml=await chatDocxXml(await blob.arrayBuffer());if(cancelled)return;const doc=new DOMParser().parseFromString(xml,'application/xml');if(doc.querySelector('parsererror'))throw Error('Nieprawidłowy dokument Word.');const ns='http://schemas.openxmlformats.org/wordprocessingml/2006/main';for(const p of doc.getElementsByTagNameNS(ns,'p')){const el=document.createElement('p');el.textContent=Array.from(p.getElementsByTagNameNS(ns,'t')).map(t=>t.textContent).join('');body.appendChild(el);}const note=document.createElement('small');note.textContent='Podgląd tekstu DOCX. Pełne formatowanie jest dostępne w pobranym pliku.';body.prepend(note);}
+    else body.textContent='Ten format można pobrać i otworzyć w odpowiedniej aplikacji.';
+  }catch(e){if(!cancelled){box.textContent=`Nie udało się otworzyć: ${e.message}`;const b=document.createElement('button');b.textContent='Zamknij';b.onclick=closeChatPreview;box.appendChild(b);}}
+}
+async function chatDocxXml(buffer){
+  const v=new DataView(buffer),bytes=new Uint8Array(buffer);let end=-1;for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--)if(v.getUint32(i,true)===0x06054b50){end=i;break;}if(end<0)throw Error('Nieprawidłowy DOCX.');
+  let offset=v.getUint32(end+16,true);const count=v.getUint16(end+10,true);for(let i=0;i<count;i++){if(v.getUint32(offset,true)!==0x02014b50)break;const method=v.getUint16(offset+10,true),size=v.getUint32(offset+20,true),expanded=v.getUint32(offset+24,true),nameLen=v.getUint16(offset+28,true),extra=v.getUint16(offset+30,true),comment=v.getUint16(offset+32,true),local=v.getUint32(offset+42,true),name=new TextDecoder().decode(bytes.subarray(offset+46,offset+46+nameLen));
+    if(name==='word/document.xml'){if(expanded>16*1024*1024)throw Error('Dokument zbyt duży do podglądu.');const start=local+30+v.getUint16(local+26,true)+v.getUint16(local+28,true),compressed=bytes.slice(start,start+size);if(method===0)return new TextDecoder().decode(compressed);if(method!==8)throw Error('Nieobsługiwany DOCX.');const reader=new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader(),parts=[];let total=0;while(true){const {done,value}=await reader.read();if(done)break;total+=value.length;if(total>16*1024*1024){await reader.cancel();throw Error('Dokument zbyt duży.');}parts.push(value);}return new Blob(parts).text();}offset+=46+nameLen+extra+comment;}
+  throw Error('Brak tekstu w pliku DOCX.');
+}
+function chatAudioFiles(){return chatAllFiles().filter(a=>chatFileKind(a)==='audio');}
+async function playChatAudio(path){const list=chatAudioFiles(),i=list.findIndex(a=>a.path===path);if(i<0)return;stopChatAudio();const token={};chatAudio=token;
+  try{const blob=await chatBlob(list[i]);if(chatAudio!==token)return;chatAudioUrl=URL.createObjectURL(blob);const audio=new Audio(chatAudioUrl);chatAudio=audio;chatAudioIndex=i;drawChatPlayer(list[i]);audio.onended=()=>stepChatAudio(1);await audio.play();}catch(e){toast(e.message);}}
+function stopChatAudio(){if(chatAudio instanceof Audio)chatAudio.pause();chatAudio=null;if(chatAudioUrl)URL.revokeObjectURL(chatAudioUrl);chatAudioUrl=null;const box=document.getElementById('chat-player');if(box){box.replaceChildren();box.hidden=true;}}
+function stepChatAudio(direction){const list=chatAudioFiles(),i=chatAudioIndex+direction;if(i>=0&&i<list.length)playChatAudio(list[i].path);else stopChatAudio();}
+function drawChatPlayer(a){const box=document.getElementById('chat-player');if(!box||!(chatAudio instanceof Audio))return;box.hidden=false;box.innerHTML=`<b>♫ ${esc(a.name)}</b><div><button data-audio="prev" aria-label="Poprzedni">⏮</button><button data-audio="pause" aria-label="Odtwórz lub pauza">⏯</button><button data-audio="stop" aria-label="Stop">⏹</button><button data-audio="next" aria-label="Następny">⏭</button><input type="range" min="0" max="100" value="0" aria-label="Pozycja odtwarzania"></div>`;box.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(b.dataset.audio==='prev')stepChatAudio(-1);if(b.dataset.audio==='next')stepChatAudio(1);if(b.dataset.audio==='stop')stopChatAudio();if(b.dataset.audio==='pause')chatAudio.paused?chatAudio.play().catch(e=>toast(e.message)):chatAudio.pause();});box.querySelector('input').oninput=e=>{if(Number.isFinite(chatAudio.duration))chatAudio.currentTime=Number(e.target.value)*chatAudio.duration/100;};chatAudio.ontimeupdate=()=>{const input=box.querySelector('input');if(input&&Number.isFinite(chatAudio?.duration))input.value=chatAudio.currentTime/chatAudio.duration*100;};}
+function bindChatMedia(){
+  document.getElementById('chat-attach').onclick=()=>{if(!chatBusy)document.getElementById('chat-files').click();};document.getElementById('chat-files').onchange=e=>{if(!chatBusy){chatFiles.push(...e.target.files);drawChatFiles();}e.target.value='';};drawChatFiles();if(chatAudio instanceof Audio){const a=chatAudioFiles()[chatAudioIndex];if(a)drawChatPlayer(a);}
 }
   function renderTasksPage(open,prog,rev,urg,u){
   let tasks=[...state.db.tasks];
@@ -1193,7 +1180,8 @@ function bindCloudSetup(){
   document.getElementById('import-cloud-code')?.addEventListener('click',()=>{try{const c=parseConfigCode(document.getElementById('cloud-code').value);document.getElementById('cloud-url').value=c.url;document.getElementById('cloud-key').value=c.key;toast('Kod wczytany.');}catch(e){toast(e.message);}});
   document.getElementById('save-cloud')?.addEventListener('click',async()=>{try{saveCloudConfig(document.getElementById('cloud-url').value,document.getElementById('cloud-key').value);state.mode='cloud';state.modal=null;state.db=null;state.auth=null;localStorage.removeItem(AUTH_KEY);render();}catch(e){toast(e.message);}});
 }
-function bind(){if(state.tab==='chat'){
+function bind(){if(state.tab!=='chat'){stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);}if(state.tab==='chat'){
+  bindChatMedia();
   setTimeout(()=>loadChatMessages(),0);
   if(window.imperiumChatTimer){
   clearInterval(window.imperiumChatTimer);
@@ -1834,3 +1822,4 @@ function initSeason(){
 initSeason();
   init();
 })();
+

@@ -1,0 +1,100 @@
+name: Verify and publish IMPERIUM chat media
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-chat-media.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: imperium-chat-publish
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: chat_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript and bundled assets
+        run: |
+          node --check app.js
+          cmp app.js android-wrapper/app/src/main/assets/app.js
+          cmp styles.css android-wrapper/app/src/main/assets/styles.css
+          ! grep -E 'getUserMedia|chat-live-start' app.js
+          ! grep -E 'android.permission.(CAMERA|RECORD_AUDIO)' android-wrapper/app/src/main/AndroidManifest.xml
+      - name: Verify author and attachment permissions
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: local-test-only
+          PGDATABASE: chat_test
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+          psql -v ON_ERROR_STOP=1 -f tests/chat-db-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f backend/chat-media.sql
+          psql -v ON_ERROR_STOP=1 -f backend/chat-media.sql
+          psql -v ON_ERROR_STOP=1 -f tests/chat-db-checks.sql
+      - name: Verify mobile attachment and playback controls
+        run: |
+          npm install --prefix "$RUNNER_TEMP/chat-qa" --no-save playwright@1.58.2
+          "$RUNNER_TEMP/chat-qa/node_modules/.bin/playwright" install --with-deps chromium
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/chat-qa/node_modules/playwright" node tests/chat-browser-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chat-mobile-check
+          path: /tmp/imperium-chat-smoke.png
+          if-no-files-found: ignore
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client zip
+      - name: Apply chat migration
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          test -n "$SUPABASE_DB_URL"
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/chat-media.sql
+          version="$(psql "$SUPABASE_DB_URL" -Atqc 'select greatest(coalesce(max(version),0)+1,2) from public.app_updates')"
+          echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Package complete web assets
+        run: |
+          cp -R android-wrapper/app/src/main/assets package
+          (cd package && zip -qr "../imperium-web-${WEB_VERSION}.zip" .)
+      - name: Upload update
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_URL: https://kpqhmmietusedznadjjy.supabase.co
+        run: |
+          test -n "$SUPABASE_SECRET_KEY"
+          curl --fail-with-body -X POST "$SUPABASE_URL/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" \
+            -H "Authorization: Bearer $SUPABASE_SECRET_KEY" -H "apikey: $SUPABASE_SECRET_KEY" \
+            -H 'Content-Type: application/zip' -H 'x-upsert: true' --data-binary "@imperium-web-${WEB_VERSION}.zip"
+      - name: Activate verified update
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -v version="$WEB_VERSION" \
+            -v package_url="https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" <<'SQL'
+          begin;
+          update public.app_updates set active=false where active;
+          insert into public.app_updates(version,version_name,package_url,active)
+          values(:'version'::integer,'Czat · załączniki, odtwarzacz, usuwanie wiadomości',:'package_url',true);
+          commit;
+          SQL

@@ -38,6 +38,18 @@ import java.net.URL;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 public class MainActivity extends Activity {
+    private View fullscreenVideo;
+    private WebChromeClient.CustomViewCallback fullscreenCallback;
+    private void closeFullscreenVideo() {
+        if (fullscreenVideo == null) return;
+        ((android.view.ViewGroup)getWindow().getDecorView()).removeView(fullscreenVideo);
+        fullscreenVideo = null;
+        web.setVisibility(View.VISIBLE);
+        if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
+        fullscreenCallback = null;
+        hideSystemBars();
+    }
+
 
     private void hideSystemBars() {
         // The WebView must already be attached to the window. Keep decor fitting
@@ -451,6 +463,16 @@ private void loadImperium() {
         });
 
         web.setWebChromeClient(new WebChromeClient() {
+            @Override public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (fullscreenVideo != null) { callback.onCustomViewHidden(); return; }
+                fullscreenVideo = view;
+                fullscreenCallback = callback;
+                web.setVisibility(View.GONE);
+                ((android.view.ViewGroup)getWindow().getDecorView()).addView(view, new android.view.ViewGroup.LayoutParams(-1, -1));
+                hideSystemBars();
+            }
+            @Override public void onHideCustomView() { closeFullscreenVideo(); }
+
             @Override
             public boolean onShowFileChooser(
                     WebView webView,
@@ -471,6 +493,7 @@ private void loadImperium() {
                 String[] mime = new String[]{
                         "image/*",
                         "video/*",
+                        "audio/*",
                         "application/pdf",
                         "text/plain",
                         "application/msword",
@@ -554,6 +577,7 @@ loadImperium();
 
     @Override
     public void onBackPressed() {
+        if (fullscreenVideo != null) { closeFullscreenVideo(); return; }
 
         if (web != null && web.canGoBack()) {
             web.goBack();
@@ -896,3 +920,4 @@ public void checkWebUpdate(
         }
     }
 }
+
