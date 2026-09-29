@@ -330,7 +330,7 @@ async function loadCloudDB({silent=false}={}){
     state.rentalRooms=(rentalRooms||[]).map(x=>({id:x.id,locationId:x.location_id,building:x.building,floor:x.floor,number:x.room_number,areaSqm:Number(x.area_sqm),hasMeter:x.has_electric_meter,meterReading:x.meter_reading,meterReadOn:x.meter_read_on}));
     state.rentalDocuments=(rentalDocuments||[]).map(x=>({id:x.id,rentalId:x.rental_id,path:x.storage_path,name:x.file_name,size:x.size_bytes}));
     state.invoiceSellers=(invoiceSellers||[]).map(x=>({id:x.id,name:x.name,nip:x.nip,streetAddress:x.street_address,postalCity:x.postal_city,bankAccount:x.bank_account||''}));
-    state.invoiceDrafts=(invoiceDrafts||[]).map(x=>({id:x.id,sellerId:x.seller_id,rentalId:x.rental_id,number:x.invoice_number,issueDate:x.issue_date,saleDate:x.sale_date,dueDate:x.due_date,buyerName:x.buyer_name,buyerNip:x.buyer_nip,buyerStreet:x.buyer_street,buyerPostalCity:x.buyer_postal_city,lines:x.lines,status:x.status,ksefNumber:x.ksef_number,ksefReference:x.ksef_reference,ksefError:x.ksef_error,issuedXml:x.issued_xml,upoXml:x.upo_xml}));
+    state.invoiceDrafts=(invoiceDrafts||[]).map(x=>({id:x.id,sellerId:x.seller_id,rentalId:x.rental_id,number:x.invoice_number,issueDate:x.issue_date,saleDate:x.sale_date,dueDate:x.due_date,buyerName:x.buyer_name,buyerNip:x.buyer_nip,buyerStreet:x.buyer_street,buyerPostalCity:x.buyer_postal_city,lines:x.lines,status:x.status,ksefNumber:x.ksef_number,ksefReference:x.ksef_reference,ksefError:x.ksef_error,issuedXml:x.issued_xml,upoXml:x.upo_xml,sellerSnapshot:x.seller_snapshot}));
     state.rentalActions=(rentalActions||[]).map(x=>({id:x.id,rentalId:x.rental_id,kind:x.kind,dueOn:x.due_on,notes:x.notes||'',completedAt:x.completed_at}));
     state.importantAlerts=(importantAlerts||[]).map(x=>({id:x.id,kind:x.kind,sourceId:x.source_id,dueOn:x.due_on,title:x.title,details:x.details,locationId:x.location_id,createdAt:x.created_at,inProgressAt:x.in_progress_at}));
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
@@ -607,7 +607,7 @@ function renderInvoicesPage(){
   return `<div class="toolbar"><div><div class="eyebrow">SPRZEDAŻ</div><h2 class="section-title">Faktury</h2></div><div class="invoice-buttons"><button class="smallbtn" id="add-invoice-seller">+ Firma wystawiająca</button><button class="goldbtn" id="add-invoice" ${state.invoiceSellers.length?'':'disabled'}>+ Faktura</button></div></div>
   <div class="status-note">Wystawianie w IMPERIUM → KSeF → dokument dla Optimy. Teraz możesz skonfigurować firmy i przygotować szkice oraz plik FA(3). Wysyłka produkcyjna pojawi się po podłączeniu bezpiecznej usługi KSeF i uprawnień firm.</div>
   <div class="settings-card"><div class="subheading">Firmy wystawiające</div><div class="invoice-sellers">${state.invoiceSellers.map(s=>`<div class="invoice-seller"><span><b>${esc(s.name)}</b><small>NIP ${esc(s.nip)} · ${esc(s.streetAddress)}, ${esc(s.postalCity)}</small></span><button class="smallbtn" data-edit-invoice-seller="${esc(s.id)}">Edytuj</button></div>`).join('')||'<div class="empty compact">Dodaj firmę, która wystawia faktury.</div>'}</div></div>
-  <div class="settings-card"><div class="subheading">Szkice faktur</div><div class="invoice-list">${state.invoiceDrafts.map(x=>{const t=invoiceDraftTotals(x),s=state.invoiceSellers.find(y=>y.id===x.sellerId);return `<div class="invoice-entry"><div><b>${esc(x.number)}</b><small>${esc(s?.name||'Firma')} → ${esc(x.buyerName)} · ${esc(x.issueDate)}</small><small>${x.ksefNumber?`KSeF: ${esc(x.ksefNumber)}`:esc(({draft:'SZKIC · nie wysłano do KSeF',sending:'WYSYŁANIE · sprawdź status',processing:'KSeF · przetwarzanie',accepted:'PRZYJĘTA W KSeF',rejected:'ODRZUCONA · '+(x.ksefError||'')})[x.status]||x.status)}</small></div><div class="invoice-actions"><strong>${t?rentMoney(t.gross/100):'—'}</strong>${x.status==='draft'?`<button class="smallbtn" data-edit-invoice="${esc(x.id)}">Edytuj</button>`:''}<button class="smallbtn" data-export-invoice="${esc(x.id)}">FA(3) XML</button></div></div>`}).join('')||'<div class="empty compact">Brak szkiców.</div>'}</div></div>`;
+  <div class="settings-card"><div class="subheading">Faktury i szkice</div><div class="invoice-list">${state.invoiceDrafts.map(x=>{const t=invoiceDraftTotals(x),s=state.invoiceSellers.find(y=>y.id===x.sellerId);return `<div class="invoice-entry"><div><b>${esc(x.number)}</b><small>${esc(s?.name||'Firma')} → ${esc(x.buyerName)} · ${esc(x.issueDate)}</small><small>${x.ksefNumber?`KSeF: ${esc(x.ksefNumber)}`:esc(({draft:'SZKIC · nie wysłano do KSeF',sending:'WYSYŁANIE · sprawdź status',processing:'KSeF · przetwarzanie',accepted:'PRZYJĘTA W KSeF',rejected:'ODRZUCONA · '+(x.ksefError||'')})[x.status]||x.status)}</small></div><div class="invoice-actions"><strong>${t?rentMoney(t.gross/100):'—'}</strong>${x.status==='draft'?`<button class="smallbtn" data-edit-invoice="${esc(x.id)}">Edytuj</button>`:''}<button class="smallbtn gold" data-view-invoice-pdf="${esc(x.id)}">PDF</button><button class="smallbtn" data-export-invoice="${esc(x.id)}">FA(3) XML</button></div></div>`}).join('')||'<div class="empty compact">Brak szkiców.</div>'}</div></div>`;
 }
 function renderRentalsPage(){
   if(!canManageRentals())return '';
@@ -987,6 +987,7 @@ function renderModal(){
     const room=state.rentalRooms.find(x=>x.id===state.roomId),building=room?.building||state.roomBuilding||'Smolańska 3',floor=room?.floor||state.roomFloor||'Parter';
     return `<div class="modal-bg"><div class="modal"><h2>${room?'Edytuj pomieszczenie':'Nowe pomieszczenie'}</h2><div class="modal-sub">${esc(building)} / ${esc(floor)}</div><div class="formgrid"><div class="field"><label>Numer / nazwa pomieszczenia</label><input id="f-room-number" maxlength="80" value="${esc(room?.number||'')}"></div><div class="field"><label>Powierzchnia (m²)</label><input id="f-room-area" type="number" min="0.01" step="0.01" value="${room?.areaSqm??''}"></div></div><label class="checkrow"><input id="f-room-meter" type="checkbox" ${room?.hasMeter?'checked':''}> Licznik energii elektrycznej</label><div class="formgrid" id="room-meter-fields"><div class="field"><label>Stan licznika</label><input id="f-room-reading" type="number" min="0" step="0.001" value="${room?.meterReading??''}"></div><div class="field"><label>Data odczytu</label><input id="f-room-read-on" type="date" value="${esc(room?.meterReadOn||'')}"></div></div><div class="modal-actions">${room&&isAdmin()?'<button class="dangerbtn" id="delete-room">Usuń pomieszczenie</button>':''}${close}<button class="goldbtn" id="save-room">Zapisz</button></div></div></div>`;
   }
+  if(state.modal==='invoicePdf')return `<div class="modal-bg"><div class="modal pdf-modal"><h2>Faktura ${esc(state.pdfName||'')}</h2><div id="invoice-pdf-content" class="pdf-content">Przygotowywanie PDF…</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button></div></div></div>`;
   if(state.modal==='rentalPdf')return `<div class="modal-bg"><div class="modal pdf-modal"><h2>${esc(state.pdfName||'Umowa PDF')}</h2><div id="rental-pdf-content" class="pdf-content">Otwieranie dokumentu…</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button></div></div></div>`;
   if(state.modal==='editAttendanceStart'){const a=state.attendance.find(x=>x.id===state.attendanceId);if(!a)return '';const d=new Date(a.startedAt),local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);return `<div class="modal-bg"><div class="modal"><h2>Korekta początku pracy</h2><div class="modal-sub">${esc(getUser(a.userId)?.name||'Pracownik')} · ${esc(getLoc(a.locationId)?.name||'Obiekt')}</div><div class="field"><label>Rzeczywisty początek (data i godzina)</label><input id="f-attendance-start" type="datetime-local" value="${local}"></div>${a.endedAt?`<div class="status-note">Koniec meldunku: ${fmtDate(a.endedAt)}</div>`:''}<div class="modal-actions">${close}<button class="goldbtn" id="save-attendance-start">Zapisz korektę</button></div></div></div>`;}
   if(state.modal==='rentalAction'){const a=state.rentalActions.find(x=>x.id===state.actionId);return `<div class="modal-bg"><div class="modal"><h2>${a?'Edytuj plan':'Zaplanuj dokument'}</h2><div class="field"><label>Dokument</label><select id="f-action-kind"><option value="cesja" ${a?.kind==='cesja'?'selected':''}>Cesja</option><option value="aneks" ${a?.kind==='aneks'?'selected':''}>Aneks</option><option value="wypowiedzenie" ${a?.kind==='wypowiedzenie'?'selected':''}>Wypowiedzenie</option></select></div><div class="field"><label>Termin przygotowania</label><input id="f-action-date" type="date" value="${esc(a?.dueOn||'')}"></div><div class="field"><label>Uwagi</label><textarea id="f-action-notes" maxlength="1000">${esc(a?.notes||'')}</textarea></div><div class="modal-actions">${a&&!a.completedAt?'<button class="ghost" id="complete-rental-action">Wykonane</button>':''}${close}<button class="goldbtn" id="save-rental-action">Zapisz</button></div></div></div>`;}
@@ -1072,7 +1073,7 @@ setTimeout(()=>{
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
-  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;state.roomId=null;selectedFiles=[];fileInput.value='';render();});
+  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}state.invoicePdfBlob=null;state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;state.roomId=null;selectedFiles=[];fileInput.value='';render();});
   document.getElementById('logout')?.addEventListener('click',()=>state.mode==='cloud'?signOutCloud():demoLogout());
   document.getElementById('new-task')?.addEventListener('click',()=>{selectedFiles=[];state.modal='newTask';render();});
   document.getElementById('add-location')?.addEventListener('click',()=>{state.modal='newLocation';render();});
@@ -1087,6 +1088,7 @@ setTimeout(()=>{
   document.querySelectorAll('[data-edit-invoice]').forEach(b=>b.onclick=()=>{state.invoiceId=b.dataset.editInvoice;state.invoiceLines=[];state.modal='invoiceDraft';render();});
   document.querySelectorAll('[data-invoice-rental]').forEach(b=>b.onclick=()=>{const r=state.rentals.find(x=>x.id===b.dataset.invoiceRental);if(!r)return;state.invoiceId=null;state.invoiceRentalId=r.id;state.invoiceLines=invoiceLineDefaults(r);state.tab='invoices';state.modal=state.invoiceSellers.length?'invoiceDraft':null;render();if(!state.invoiceSellers.length)toast('Najpierw dodaj firmę wystawiającą faktury.');});
   document.querySelectorAll('[data-export-invoice]').forEach(b=>b.onclick=()=>exportInvoiceXml(b.dataset.exportInvoice));
+  document.querySelectorAll('[data-view-invoice-pdf]').forEach(b=>b.onclick=()=>viewInvoicePdf(b.dataset.viewInvoicePdf));
   document.getElementById('save-invoice')?.addEventListener('click',saveInvoiceDraft);
   document.getElementById('delete-invoice')?.addEventListener('click',deleteInvoiceDraft);
   document.getElementById('add-invoice-line')?.addEventListener('click',()=>{state.invoiceLines=readInvoiceLines();state.invoiceLines.push({description:'',unit:'usł.',quantity:'1',unit_net:'',vat_rate:''});render();});
@@ -1120,6 +1122,7 @@ setTimeout(()=>{
   document.querySelectorAll('.rental-modal input').forEach(el=>el.addEventListener('input',updateRentalFormTotal));
   updateRentalFormTotal();
   if(state.modal==='rentalPdf')loadRentalPdfPreview();
+  if(state.modal==='invoicePdf')loadInvoicePdfPreview();
   document.querySelectorAll('[data-edit-inspection]').forEach(b=>b.onclick=()=>{state.inspectionId=b.dataset.editInspection;state.modal='editInspection';render();});
   document.getElementById('save-inspection')?.addEventListener('click',saveInspection);
   document.getElementById('delete-inspection')?.addEventListener('click',deleteInspection);
@@ -1328,15 +1331,52 @@ async function saveInvoiceDraft(){
   if(!v.number||!v.issueDate||!v.saleDate||!v.dueDate||v.dueDate<v.issueDate||!v.buyerName||!v.buyerStreet||!v.buyerPostalCity||!window.ImperiumInvoice.validNip(v.buyerNip))return toast('Uzupełnij numer, daty i pełne dane nabywcy z poprawnym NIP.');
   if(state.invoiceDrafts.some(x=>x.id!==old?.id&&x.sellerId===v.sellerId&&x.number===v.number))return toast('Ta firma ma już fakturę o takim numerze.');
   try{window.ImperiumInvoice.generate(v,state.invoiceSellers.find(x=>x.id===v.sellerId));}catch(e){return toast(e.message);}
+  const seller=state.invoiceSellers.find(x=>x.id===v.sellerId),sellerSnapshot={name:seller.name,nip:seller.nip,streetAddress:seller.streetAddress,postalCity:seller.postalCity,bankAccount:seller.bankAccount||''};
   await withAction('Zapisywanie szkicu…',async()=>{
-    if(state.mode==='demo'){if(old)Object.assign(old,v);else state.db.invoiceDrafts.unshift({id:uid(),status:'draft',...v});saveDemoDB();}
-    else{const row={seller_id:v.sellerId,rental_id:v.rentalId,invoice_number:v.number,issue_date:v.issueDate,sale_date:v.saleDate,due_date:v.dueDate,buyer_name:v.buyerName,buyer_nip:v.buyerNip,buyer_street:v.buyerStreet,buyer_postal_city:v.buyerPostalCity,lines:v.lines};if(old)await pgPatch('invoice_drafts',`id=eq.${encodeURIComponent(old.id)}`,row);else await pgPost('invoice_drafts',{...row,created_by:currentUser().id});await loadCloudDB({silent:true});}
+    if(state.mode==='demo'){if(old)Object.assign(old,v,{sellerSnapshot});else state.db.invoiceDrafts.unshift({id:uid(),status:'draft',...v,sellerSnapshot});saveDemoDB();}
+    else{const row={seller_id:v.sellerId,rental_id:v.rentalId,invoice_number:v.number,issue_date:v.issueDate,sale_date:v.saleDate,due_date:v.dueDate,buyer_name:v.buyerName,buyer_nip:v.buyerNip,buyer_street:v.buyerStreet,buyer_postal_city:v.buyerPostalCity,lines:v.lines,seller_snapshot:sellerSnapshot};if(old)await pgPatch('invoice_drafts',`id=eq.${encodeURIComponent(old.id)}`,row);else await pgPost('invoice_drafts',{...row,created_by:currentUser().id});await loadCloudDB({silent:true});}
     state.invoiceId=null;state.invoiceLines=[];state.modal=null;
   });
 }
 async function deleteInvoiceDraft(){const x=state.invoiceDrafts.find(y=>y.id===state.invoiceId);if(!isAdmin()||!x||!confirm('Usunąć szkic faktury?'))return;await withAction('Usuwanie szkicu…',async()=>{if(state.mode==='demo'){state.db.invoiceDrafts=state.db.invoiceDrafts.filter(y=>y.id!==x.id);saveDemoDB();}else{await pgDelete('invoice_drafts',`id=eq.${encodeURIComponent(x.id)}`);await loadCloudDB({silent:true});}state.modal=null;state.invoiceId=null;});}
+function invoicePdfFileName(invoice){return `Faktura-${invoice.number.replace(/[^a-zA-Z0-9._-]+/g,'_')}.pdf`;}
+function viewInvoicePdf(id){const invoice=state.invoiceDrafts.find(x=>x.id===id);if(!invoice)return;if(state.pdfUrl)URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;state.invoicePdfBlob=null;state.invoiceId=id;state.pdfName=invoice.number;state.modal='invoicePdf';render();}
+async function loadInvoicePdfPreview(){
+  const id=state.invoiceId,invoice=state.invoiceDrafts.find(x=>x.id===id),seller=invoice?.sellerSnapshot||state.invoiceSellers.find(x=>x.id===invoice?.sellerId),box=document.getElementById('invoice-pdf-content');
+  if(!invoice||!seller||!box)return;
+  try{
+    const bytes=await window.ImperiumInvoicePdf.generate(invoice,seller);
+    if(state.modal!=='invoicePdf'||state.invoiceId!==id)return;
+    const blob=new Blob([bytes],{type:'application/pdf'}),url=URL.createObjectURL(blob);
+    if(state.pdfUrl)URL.revokeObjectURL(state.pdfUrl);
+    state.pdfUrl=url;state.invoicePdfBlob=blob;
+    box.innerHTML='<div class="pdf-pages">Ładowanie stron…</div>';
+    const pdfjs=await import('./pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc='./pdf.worker.min.mjs';
+    const pdf=await pdfjs.getDocument(url).promise,pages=box.querySelector('.pdf-pages');
+    if(state.modal!=='invoicePdf'||state.invoiceId!==id)return;
+    pages.textContent='';
+    for(let n=1;n<=pdf.numPages;n++){
+      if(state.modal!=='invoicePdf'||state.invoiceId!==id)break;
+      const page=await pdf.getPage(n),base=page.getViewport({scale:1}),scale=Math.min(2,Math.max(.5,(pages.clientWidth-12)/base.width)),view=page.getViewport({scale});
+      const canvas=document.createElement('canvas');canvas.width=Math.ceil(view.width);canvas.height=Math.ceil(view.height);canvas.setAttribute('aria-label',`Strona ${n} z ${pdf.numPages}`);pages.appendChild(canvas);
+      await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise;
+    }
+  }catch(e){if(state.modal==='invoicePdf')box.textContent=`Nie udało się przygotować PDF: ${e.message}`;}
+  if(state.modal==='invoicePdf'&&state.invoiceId===id&&state.invoicePdfBlob){
+    const save=document.createElement('button');save.className='smallbtn gold';save.textContent='Pobierz PDF';save.onclick=saveInvoicePdf;
+    const footer=document.createElement('div');footer.className='modal-actions';footer.appendChild(save);box.appendChild(footer);
+  }
+}
+async function saveInvoicePdf(){
+  const invoice=state.invoiceDrafts.find(x=>x.id===state.invoiceId),blob=state.invoicePdfBlob;
+  if(!invoice||!blob)return toast('Otwórz najpierw podgląd PDF.');
+  const name=invoicePdfFileName(invoice);
+  if(window.AndroidBridge?.saveFile){const reader=new FileReader();reader.onload=()=>window.AndroidBridge.saveFile(name,'application/pdf',String(reader.result).split(',')[1]);reader.onerror=()=>toast('Nie udało się przygotować pliku.');reader.readAsDataURL(blob);return;}
+  const link=document.createElement('a');link.href=state.pdfUrl;link.download=name;document.body.appendChild(link);link.click();link.remove();
+}
 function exportInvoiceXml(id){
-  const invoice=state.invoiceDrafts.find(x=>x.id===id),seller=state.invoiceSellers.find(x=>x.id===invoice?.sellerId);if(!invoice||!seller)return;
+  const invoice=state.invoiceDrafts.find(x=>x.id===id),seller=invoice?.sellerSnapshot||state.invoiceSellers.find(x=>x.id===invoice?.sellerId);if(!invoice||!seller)return;
   try{const xml=invoice.issuedXml||window.ImperiumInvoice.generate(invoice,seller),blob=new Blob([xml],{type:'application/xml;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`FA3-${invoice.number.replace(/[^a-zA-Z0-9._-]+/g,'_')}.xml`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e){toast(e.message);}
 }
 function rentalNumber(id){return Number(document.getElementById(id)?.value||0);}

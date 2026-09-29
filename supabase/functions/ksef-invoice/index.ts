@@ -88,7 +88,7 @@ Deno.serve(async req => {
     if (!invoice) return fail('Faktura jest już wysyłana.', 409);
     try {
       const format = (globalThis as any).ImperiumInvoice;
-      const xml = format.generate({ number: invoice.invoice_number, issueDate: invoice.issue_date, saleDate: invoice.sale_date, dueDate: invoice.due_date, buyerName: invoice.buyer_name, buyerNip: invoice.buyer_nip, buyerStreet: invoice.buyer_street, buyerPostalCity: invoice.buyer_postal_city, lines: invoice.lines }, { name: seller.name, nip: seller.nip, streetAddress: seller.street_address, postalCity: seller.postal_city });
+      const xml = format.generate({ number: invoice.invoice_number, issueDate: invoice.issue_date, saleDate: invoice.sale_date, dueDate: invoice.due_date, buyerName: invoice.buyer_name, buyerNip: invoice.buyer_nip, buyerStreet: invoice.buyer_street, buyerPostalCity: invoice.buyer_postal_city, lines: invoice.lines }, invoice.seller_snapshot || { name: seller.name, nip: seller.nip, streetAddress: seller.street_address, postalCity: seller.postal_city });
       await save(invoice.id, { issued_xml: xml });
       const token = await accessToken(seller.nip, secret);
       const key = randomBytes(32), iv = randomBytes(16), plaintext = Buffer.from(xml, 'utf8');
