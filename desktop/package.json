@@ -1,0 +1,21 @@
+{
+  "name": "imperium-desktop",
+  "productName": "IMPERIUM",
+  "version": "5.3.0",
+  "description": "IMPERIUM desktop application",
+  "main": "main.js",
+  "author": "IMPERIUM",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "make": "electron-forge make"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-squirrel": "7.11.2",
+    "electron": "44.3.0"
+  }
+}

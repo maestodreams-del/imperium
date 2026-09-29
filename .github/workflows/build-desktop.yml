@@ -1,0 +1,50 @@
+name: Build IMPERIUM desktop
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-desktop.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'app.js'
+      - 'index.html'
+      - 'styles.css'
+      - 'config.js'
+      - 'icons/**'
+      - 'manifest.webmanifest'
+      - 'sw.js'
+      - 'invoice-format.js'
+      - 'pdf.min.mjs'
+      - 'pdf.worker.min.mjs'
+      - '.github/workflows/build-desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install Pillow
+      - run: python desktop/prepare.py
+      - name: Install dependencies and build installer
+        working-directory: desktop
+        run: |
+          npm install
+          npm run make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IMPERIUM-Windows
+          path: desktop/out/make/squirrel.windows/x64/*
+          if-no-files-found: error
