@@ -137,9 +137,21 @@ function duration(ms){
 function toast(text){
   document.querySelector('.notice')?.remove(); const d=document.createElement('div'); d.className='notice'; d.textContent=text; document.body.appendChild(d); setTimeout(()=>d.remove(),3500);
 }
+let notificationAudio;
+function playNotificationSound(){
+  if(document.visibilityState==='hidden')return;
+  try{
+    notificationAudio ||= new Audio('sounds/imperium_notification.mp3');
+    notificationAudio.volume=1;
+    notificationAudio.currentTime=0;
+    const playing=notificationAudio.play();
+    playing?.catch?.(e=>console.warn('IMPERIUM sound:',e));
+  }catch(e){console.warn('IMPERIUM sound:',e);}
+}
 function notify(title,body){
   try { if(window.AndroidBridge?.notify) window.AndroidBridge.notify(String(title),String(body||'')); } catch(e){}
   if('Notification' in window && Notification.permission==='granted'){ try{new Notification(title,{body,icon:'icons/icon.svg'});}catch(e){} }
+  playNotificationSound();
   toast(body||title);
 }
 function setLoading(on,msg='Łączenie z IMPERIUM…'){
@@ -571,7 +583,7 @@ function renderSettingsPage(){
   return `<div class="toolbar"><div><div class="eyebrow">System</div><h2 class="section-title">Ustawienia</h2></div></div>
   <div class="settings-card"><h3>Tryb danych</h3><p>${state.mode==='cloud'?'☁ Wspólna baza Supabase — dane i pliki są synchronizowane między telefonami.':'⚙ Demo lokalne — dane są tylko na tym urządzeniu.'}</p>${state.cloudError?`<div class="status-note danger-text">${esc(state.cloudError)}</div>`:''}</div>
   ${state.mode==='cloud'?`<div class="settings-card"><h3>Kod konfiguracji dla zespołu</h3><p>Jeśli APK nie ma jeszcze wbudowanego adresu bazy, wyślij pracownikowi ten kod razem z APK. Po wbudowaniu konfiguracji ten krok nie będzie potrzebny.</p><div class="codebox" id="cfg-code">${esc(code)}</div><div style="margin-top:10px"><button class="smallbtn gold" id="copy-code">Kopiuj kod</button> ${!(BASE_CFG.DEFAULT_SUPABASE_URL&&BASE_CFG.DEFAULT_SUPABASE_ANON_KEY)?'<button class="smallbtn" id="server-settings">Serwer</button>':''}</div></div>`:''}
-  <div class="settings-card"><h3>Powiadomienia</h3><p>Powiadomienia o zmianach są wyświetlane podczas pracy aplikacji. Android wrapper ma również natywny kanał powiadomień.</p><div style="margin-top:12px"><button class="smallbtn gold" id="enable-notifications">Włącz powiadomienia</button></div></div>
+  <div class="settings-card"><h3>Powiadomienia</h3><p>Dźwięk odtwarza się, gdy IMPERIUM jest otwarte. Powiadomienia po zamknięciu aplikacji wymagają osobnej usługi działającej w tle.</p><div style="margin-top:12px"><button class="smallbtn gold" id="enable-notifications">Włącz powiadomienia</button> <button class="smallbtn" id="notification-sound-test">🔊 Sprawdź dźwięk</button></div></div>
   <div class="settings-card"><h3>Konto</h3><p>${esc(u.name)} • ${u.role==='admin'?'administrator':'pracownik'}</p><div style="margin-top:12px">${state.mode==='demo'?'<button class="dangerbtn" id="reset-demo">Przywróć dane demo</button>':'<button class="dangerbtn" id="cloud-logout">Wyloguj</button>'}</div></div>`;
 }
 
@@ -731,6 +743,7 @@ setTimeout(()=>{
   document.querySelectorAll('.task [data-action]').forEach(b=>b.onclick=e=>{e.stopPropagation();const id=e.currentTarget.closest('.task').dataset.task,a=e.currentTarget.dataset.action;if(a==='claim')claimTask(id);if(a==='report'){state.taskId=id;state.modal='report';selectedFiles=[];render();}if(a==='detail'){state.taskId=id;state.modal='detail';render();}});
   document.querySelectorAll('.task').forEach(card=>card.onclick=e=>{if(e.target.closest('button'))return;state.taskId=card.dataset.task;state.modal='detail';render();});
   document.getElementById('enable-notifications')?.addEventListener('click',async()=>{if(window.AndroidBridge?.requestNotificationPermission){try{window.AndroidBridge.requestNotificationPermission();toast('Poproszono Androida o zgodę.');return;}catch(e){}}if(!('Notification' in window))return toast('Powiadomienia przeglądarkowe są niedostępne.');const p=await Notification.requestPermission();toast(p==='granted'?'Powiadomienia włączone.':'Brak zgody.');});
+  document.getElementById('notification-sound-test')?.addEventListener('click',playNotificationSound);
   document.getElementById('reset-demo')?.addEventListener('click',()=>{state.db=seed();saveDemoDB();toast('Dane demo przywrócone.');render();});
   document.getElementById('copy-code')?.addEventListener('click',async()=>{const code=configCode();try{await navigator.clipboard.writeText(code);toast('Kod skopiowany.');}catch(e){toast('Przytrzymaj kod i skopiuj go ręcznie.');}});
   document.getElementById('server-settings')?.addEventListener('click',()=>{state.modal='cloudSetup';render();});
