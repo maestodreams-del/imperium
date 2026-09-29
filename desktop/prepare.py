@@ -5,7 +5,7 @@ import shutil
 root = Path(__file__).resolve().parent.parent
 dest = root / 'desktop' / 'web'
 dest.mkdir(exist_ok=True)
-for name in ('index.html', 'app.js', 'styles.css', 'config.js', 'manifest.webmanifest', 'sw.js', 'invoice-format.js', 'invoice-pdf.js', 'pdf-lib.min.js', 'fontkit.umd.min.js', 'invoice-font-data.js', 'invoice-font-LICENSE.txt', 'pdf-lib-LICENSE.md', 'fontkit-LICENSE.txt', 'pdf.min.mjs', 'pdf.worker.min.mjs', 'pdfjs-LICENSE.txt'):
+for name in ('index.html', 'app.js', 'styles.css', 'config.js', 'manifest.webmanifest', 'sw.js', 'invoice-format.js', 'invoice-pdf.js', 'pdf-lib.min.js', 'fontkit.umd.min.js', 'invoice-font-data.js', 'invoice-font-LICENSE.txt', 'pdf-lib-LICENSE.md', 'fontkit-LICENSE.txt', 'pdf.min.mjs', 'pdf.worker.min.mjs', 'pdfjs-LICENSE.txt', 'salary-aurelia.webp'):
     shutil.copy2(root / name, dest / name)
 (dest / 'icons').mkdir(exist_ok=True)
 shutil.copy2(root / 'icons' / 'icon.svg', dest / 'icons' / 'icon.svg')

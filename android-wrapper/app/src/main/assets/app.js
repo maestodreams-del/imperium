@@ -17,6 +17,7 @@ let bottomNavScrollLeft = 0;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
+  salaryManager:false, salaryMonth:new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), salaryWorkerId:null, salaryPots:[], salaryAdditions:[], salaryLoadedMonth:null, salaryLoading:false, salaryAnimate:false,
   demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], rentalRooms: [], rentalDocuments: [], invoiceSellers: [], invoiceDrafts: [], invoiceId: null, invoiceLines: [], vouchers: [], inspectionId: null, rentalId: null, roomId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
 
@@ -79,7 +80,7 @@ function loadDemoDB(){
       x.coinTransactions ||= [];
       x.inspections ||= [];
       x.rentals ||= [];x.rentalRooms ||= [];x.rentalDocuments ||= [];x.invoiceSellers ||= [];x.invoiceDrafts ||= [];x.rentalActions ||= [];x.importantAlerts ||= [];x.importantProgress ||= {};
-      x.vouchers ||= [];
+      x.vouchers ||= []; x.salaryPots ||= []; x.salaryAdditions ||= [];
       x.shifts ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
       return x;
@@ -113,6 +114,10 @@ function currentUser(){
 function getUser(id){ return state.db?.users?.find(u=>u.id===id); }
 function getLoc(id){ return state.db?.locations?.find(l=>l.id===id); }
 function isAdmin(){ return currentUser()?.role==='admin'; }
+function isSalaryManager(){return state.mode==='demo'?currentUser()?.id==='u-admin':state.salaryManager;}
+function salaryMonthKey(){return state.salaryMonth+'-01';}
+function salaryWorker(){return isSalaryManager()?(state.db.users.find(u=>u.id===state.salaryWorkerId&&u.active)||state.db.users.find(u=>u.active&&u.id!==currentUser().id)||currentUser()):currentUser();}
+function salaryData(){const pot=(state.mode==='demo'?state.db.salaryPots:state.salaryPots).find(p=>p.profile_id===salaryWorker()?.id&&p.month_start===salaryMonthKey());const additions=(state.mode==='demo'?state.db.salaryAdditions:state.salaryAdditions).filter(a=>a.pot_id===pot?.id).sort((a,b)=>b.created_at.localeCompare(a.created_at));return {pot,additions,total:additions.length*25};}
 function canManageRentals(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canManageRentals); }
 function canAddInspections(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canAddInspections); }
 function canCreateTasks(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canCreateTasks); }
@@ -303,7 +308,7 @@ async function loadCloudDB({silent=false}={}){
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
     if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments,invoiceSellers,invoiceDrafts]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments,invoiceSellers,invoiceDrafts,salaryManager]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,can_view_important,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -323,8 +328,10 @@ async function loadCloudDB({silent=false}={}){
       pgGet('rental_rooms?select=*&order=building.asc,floor.asc,room_number.asc'),
       pgGet('rental_documents?select=*&order=created_at.desc'),
       pgGet('invoice_sellers?select=*&order=name.asc'),
-      pgGet('invoice_drafts?select=*&order=created_at.desc&limit=500')
+      pgGet('invoice_drafts?select=*&order=created_at.desc&limit=500'),
+      cloudFetch('/rest/v1/rpc/salary_is_manager',{method:'POST',body:{}})
     ]);
+    state.salaryManager=salaryManager===true;
     state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at,startedBy:a.started_by,endedBy:a.ended_by}));
     state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
     state.rentals=(rentals||[]).map(mapRental);
@@ -340,6 +347,7 @@ async function loadCloudDB({silent=false}={}){
     deliverImportantAlerts();
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
+    if(state.tab==='salary')await loadSalaryMonth({refresh:true});
     state.lastEventAt=newest; state.cloudError=''; state.loading=false;
     if(!silent){
   checkImperiumUpdate().catch(()=>{});
@@ -443,12 +451,64 @@ function render(){
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
+  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');
   if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
   bind();
+}
+async function loadSalaryMonth({refresh=false}={}){
+  if(state.mode!=='cloud'||state.salaryLoading||!currentUser())return;
+  if(!refresh&&state.salaryLoadedMonth===state.salaryMonth)return;
+  state.salaryLoading=true;
+  try{
+    const pots=await pgGet(`salary_pots?select=*&month_start=eq.${salaryMonthKey()}`);
+    const ids=pots.map(p=>p.id);
+    const additions=ids.length?await pgGet(`salary_additions?select=*&pot_id=in.(${ids.join(',')})&order=created_at.desc`):[];
+    state.salaryPots=pots;state.salaryAdditions=additions;state.salaryLoadedMonth=state.salaryMonth;
+    if(state.tab==='salary'&&!state.loading)render();
+  }catch(e){toast(e.message||'Nie udało się pobrać pensji.');}
+  finally{state.salaryLoading=false;}
+}
+function renderSalaryPage(){
+  const worker=salaryWorker(),{pot,additions,total}=salaryData(),goal=pot?.goal_zl||0,pct=goal?Math.min(100,Math.round(total/goal*100)):0;
+  const month=new Intl.DateTimeFormat('pl-PL',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(salaryMonthKey()+'T12:00:00Z'));
+  const loading=state.mode==='cloud'&&state.salaryLoadedMonth!==state.salaryMonth;
+  return `<section class="salary-page"><div class="salary-veil"><div class="salary-eyebrow">IMPERIUM · AURELIA</div><h2>Moja pensja</h2><p class="salary-subtitle">Miesięczna skarbonka · ${esc(month)}</p>
+    <div class="salary-controls"><label>Miesiąc<input id="salary-month" type="month" value="${esc(state.salaryMonth)}"></label>${isSalaryManager()?`<label>Pracownik<select id="salary-worker">${state.db.users.filter(u=>u.active).map(u=>`<option value="${esc(u.id)}" ${worker?.id===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label>`:''}</div>
+    <div class="salary-card"><div class="salary-owner">${esc(worker?.name||'Pracownik')}</div><div class="salary-total">${loading?'…':total.toLocaleString('pl-PL')} <small>zł</small></div><div class="salary-target">${goal?`Cel: ${goal.toLocaleString('pl-PL')} zł · ${pct}%`:'Ustaw cel miesiąca, aby zobaczyć postęp'}</div>
+    <div class="salary-track" role="progressbar" aria-label="Postęp skarbonki" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>
+    <div class="salary-pig-wrap ${state.salaryAnimate?'salary-celebrate':''}"><div class="salary-coin">25 zł</div><svg class="salary-pig" viewBox="0 0 250 180" role="img" aria-label="Animowana skarbonka"><defs><linearGradient id="pigGold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe7a5"/><stop offset=".55" stop-color="#dfaa58"/><stop offset="1" stop-color="#9e6d33"/></linearGradient></defs><path d="M48 82Q36 68 27 74Q14 86 31 96" fill="none" stroke="#dba552" stroke-width="9" stroke-linecap="round"/><path d="M59 126Q45 113 44 91Q45 46 108 36Q143 32 167 50L188 35L196 65Q209 75 211 90L231 95L226 124L207 130Q190 148 165 150L157 169L137 169L133 152L93 150L84 169L64 169L67 142Q57 137 59 126Z" fill="url(#pigGold)" stroke="#f9df9e" stroke-width="3"/><ellipse cx="180" cy="91" rx="4" ry="5" fill="#312c2a"/><path d="M104 54h36" stroke="#6b4729" stroke-width="5" stroke-linecap="round"/><circle cx="210" cy="105" r="3" fill="#8f6137"/></svg></div>
+    ${isSalaryManager()?`<div class="salary-admin"><button id="salary-add" class="salary-plus" ${loading?'disabled':''} aria-label="Dodaj 25 zł">+ <b>25 zł</b></button><label>Cel (zł)<input id="salary-goal" type="number" min="0" max="10000000" step="25" value="${goal}"></label><button id="salary-save-goal" class="smallbtn">Zapisz cel</button></div>`:'<p class="salary-private">Widoczne tylko dla Ciebie i właściciela IMPERIUM.</p>'}</div>
+    <div class="salary-history"><h3>Wpłaty w tym miesiącu</h3>${loading?'<p>Ładowanie…</p>':additions.length?additions.map(a=>`<div><span>+25 zł</span><time>${fmtDate(a.created_at)}</time></div>`).join(''):'<p>Brak wpłat w tym miesiącu.</p>'}</div></div></section>`;
+}
+function bindSalary(){
+  document.getElementById('salary-month')?.addEventListener('change',e=>{if(!/^\d{4}-\d{2}$/.test(e.target.value))return;state.salaryMonth=e.target.value;render();loadSalaryMonth();});
+  document.getElementById('salary-worker')?.addEventListener('change',e=>{if(!isSalaryManager())return;state.salaryWorkerId=e.target.value;render();});
+  document.getElementById('salary-add')?.addEventListener('click',async()=>{
+    if(!isSalaryManager())return;
+    const worker=salaryWorker(),month=salaryMonthKey();
+    await withAction('Dodawanie 25 zł…',async()=>{
+      if(state.mode==='demo'){
+        let pot=state.db.salaryPots.find(p=>p.profile_id===worker.id&&p.month_start===month);
+        if(!pot){pot={id:uid(),profile_id:worker.id,month_start:month,goal_zl:0};state.db.salaryPots.push(pot);}
+        state.db.salaryAdditions.push({id:uid(),pot_id:pot.id,amount_zl:25,created_at:nowISO()});saveDemoDB();
+      }else{await cloudFetch('/rest/v1/rpc/salary_add_25',{method:'POST',body:{p_profile:worker.id,p_month:month}});await loadSalaryMonth({refresh:true});}
+      state.salaryAnimate=true;setTimeout(()=>{state.salaryAnimate=false;if(state.tab==='salary')render();},1000);
+    });
+  });
+  document.getElementById('salary-save-goal')?.addEventListener('click',async()=>{
+    if(!isSalaryManager())return;
+    const worker=salaryWorker(),month=salaryMonthKey(),goal=Number(document.getElementById('salary-goal')?.value);
+    if(!Number.isInteger(goal)||goal<0||goal>10000000)return toast('Podaj cel od 0 do 10 000 000 zł.');
+    await withAction('Zapisywanie celu…',async()=>{
+      if(state.mode==='demo'){
+        let pot=state.db.salaryPots.find(p=>p.profile_id===worker.id&&p.month_start===month);
+        if(pot)pot.goal_zl=goal;else state.db.salaryPots.push({id:uid(),profile_id:worker.id,month_start:month,goal_zl:goal});saveDemoDB();
+      }else{await cloudFetch('/rest/v1/rpc/salary_set_goal',{method:'POST',body:{p_profile:worker.id,p_month:month,p_goal:goal}});await loadSalaryMonth({refresh:true});}
+    });
+  });
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
 function renderChatPage(){
@@ -1076,9 +1136,10 @@ setTimeout(()=>{
   });
 }
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else render();});
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else if(state.tab==='salary'){render();loadSalaryMonth();}else render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}state.invoicePdfBlob=null;state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;state.roomId=null;selectedFiles=[];fileInput.value='';render();});
+  bindSalary();
   document.getElementById('logout')?.addEventListener('click',()=>state.mode==='cloud'?signOutCloud():demoLogout());
   document.getElementById('new-task')?.addEventListener('click',()=>{selectedFiles=[];state.modal='newTask';render();});
   document.getElementById('add-location')?.addEventListener('click',()=>{state.modal='newLocation';render();});
