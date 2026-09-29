@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, actionId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -606,9 +606,9 @@ function renderAttendancePage(){
   ${checkin}
   ${adminControls}
   <div class="settings-card shift-list"><div class="subheading">${isAdmin()?'Grafik zespołu':'Mój grafik'}</div>${upcoming.length?upcoming.map(s=>`<div class="shift-row"><div><b>${esc(getUser(s.userId)?.name||'Pracownik')}</b><small>${esc(getLoc(s.locationId)?.name||'Obiekt')} • ${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div>${isAdmin()?`<button class="smallbtn" data-shift-delete="${s.id}">Usuń</button>`:''}</div>`).join(''):'<div class="empty compact">Brak zaplanowanych zmian.</div>'}</div>
-  ${isAdmin()?`<div class="settings-card"><div class="subheading">Kto jest teraz na obiekcie</div><div class="attendance-live">${active.length?active.map(a=>`<div class="attendance-live-row"><span class="attendance-dot"></span><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} • od ${fmtDate(a.startedAt)}${a.startedBy?` • meldował: ${esc(getUser(a.startedBy)?.name||'Admin')}`:''}</small></div><strong data-attendance-start="${a.startedAt}">${attendanceDuration(a)}</strong>${a.userId!==u.id?`<button class="smallbtn" data-admin-attendance-stop="${a.userId}">Zakończ</button>`:''}</div>`).join(''):'<div class="empty compact">Nikt nie jest teraz zameldowany.</div>'}</div></div>`:''}
+  ${isAdmin()?`<div class="settings-card"><div class="subheading">Kto jest teraz na obiekcie</div><div class="attendance-live">${active.length?active.map(a=>`<div class="attendance-live-row"><span class="attendance-dot"></span><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} • od ${fmtDate(a.startedAt)}${a.startedBy?` • meldował: ${esc(getUser(a.startedBy)?.name||'Admin')}`:''}</small></div><strong data-attendance-start="${a.startedAt}">${attendanceDuration(a)}</strong><button class="smallbtn" data-edit-attendance-start="${esc(a.id)}">Zmień początek</button>${a.userId!==u.id?`<button class="smallbtn" data-admin-attendance-stop="${a.userId}">Zakończ</button>`:''}</div>`).join(''):'<div class="empty compact">Nikt nie jest teraz zameldowany.</div>'}</div></div>`:''}
   <div class="toolbar"><div><div class="eyebrow">Dziennik pracy</div><h2 class="section-title">${isAdmin()?'Historia meldunków':'Moja historia'}</h2></div></div>
-  <div class="settings-card attendance-history">${history.length?history.map(a=>`<div class="attendance-row"><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>⌖ ${esc(getLoc(a.locationId)?.name||'Obiekt')}</small></div><div class="attendance-times"><span>${fmtDate(a.startedAt)} → ${a.endedAt?fmtDate(a.endedAt):'TERAZ'}</span><b>${attendanceDuration(a)}</b></div></div>`).join(''):'<div class="empty">Brak meldunków.</div>'}</div>`;
+  <div class="settings-card attendance-history">${history.length?history.map(a=>`<div class="attendance-row"><div><b>${esc(getUser(a.userId)?.name||'Pracownik')}</b><small>⌖ ${esc(getLoc(a.locationId)?.name||'Obiekt')}</small></div><div class="attendance-times"><span>${fmtDate(a.startedAt)} → ${a.endedAt?fmtDate(a.endedAt):'TERAZ'}</span><b>${attendanceDuration(a)}</b>${isAdmin()?`<button class="smallbtn" data-edit-attendance-start="${esc(a.id)}">Zmień początek</button>`:''}</div></div>`).join(''):'<div class="empty">Brak meldunków.</div>'}</div>`;
 }
 async function startAttendance(){
   const locationId=document.getElementById('attendance-location')?.value;if(!locationId)return toast('Wybierz obiekt.');
@@ -663,6 +663,21 @@ async function adminStartAttendance(){
       const a={id:uid(),userId,locationId,startedAt:nowISO(),endedAt:null,startedBy:currentUser().id};state.db.attendance.unshift(a);state.attendance=state.db.attendance;saveDemoDB();
     }else{await cloudFetch('/rest/v1/rpc/admin_start_attendance',{method:'POST',body:{p_profile:userId,p_location:locationId}});await loadCloudDB({silent:true});}
     await logEvent('attendance_start',`Administrator zameldował ${getUser(userId)?.name||'pracownika'} — ${getLoc(locationId)?.name||'obiekt'}`);
+  });
+}
+async function saveAttendanceStart(){
+  if(!isAdmin())return;
+  const a=state.attendance.find(x=>x.id===state.attendanceId),input=document.getElementById('f-attendance-start')?.value;
+  if(!a||!input)return toast('Wybierz datę i godzinę.');
+  const start=new Date(input),end=a.endedAt?new Date(a.endedAt):new Date();
+  if(!Number.isFinite(start.getTime())||start>new Date()||start>=end)return toast('Początek musi być przed końcem meldunku i nie może być w przyszłości.');
+  const overlaps=state.attendance.some(other=>other.id!==a.id&&other.userId===a.userId&&new Date(other.startedAt)<end&&new Date(other.endedAt||Date.now())>start);
+  if(overlaps)return toast('Ten czas nakłada się na inny meldunek pracownika.');
+  await withAction('Poprawianie godziny rozpoczęcia…',async()=>{
+    if(state.mode==='demo'){a.startedAt=start.toISOString();saveDemoDB();}
+    else{await cloudFetch('/rest/v1/rpc/admin_change_attendance_start',{method:'POST',body:{p_attendance_id:a.id,p_started_at:start.toISOString()}});await loadCloudDB({silent:true});}
+    await logEvent('attendance_edit',`Poprawiono początek pracy: ${getUser(a.userId)?.name||'pracownik'} · ${getLoc(a.locationId)?.name||'obiekt'}`);
+    state.modal=null;state.attendanceId=null;
   });
 }
 async function adminStopAttendance(userId){
@@ -888,6 +903,7 @@ function renderModal(){
   if(state.modal==='addDiscipline')return renderDisciplineModal();
   if(state.modal==='coinAdjust')return renderCoinModal();
   const close='<button class="ghost" data-close>Anuluj</button>';
+  if(state.modal==='editAttendanceStart'){const a=state.attendance.find(x=>x.id===state.attendanceId);if(!a)return '';const d=new Date(a.startedAt),local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);return `<div class="modal-bg"><div class="modal"><h2>Korekta początku pracy</h2><div class="modal-sub">${esc(getUser(a.userId)?.name||'Pracownik')} · ${esc(getLoc(a.locationId)?.name||'Obiekt')}</div><div class="field"><label>Rzeczywisty początek (data i godzina)</label><input id="f-attendance-start" type="datetime-local" value="${local}"></div>${a.endedAt?`<div class="status-note">Koniec meldunku: ${fmtDate(a.endedAt)}</div>`:''}<div class="modal-actions">${close}<button class="goldbtn" id="save-attendance-start">Zapisz korektę</button></div></div></div>`;}
   if(state.modal==='rentalAction'){const a=state.rentalActions.find(x=>x.id===state.actionId);return `<div class="modal-bg"><div class="modal"><h2>${a?'Edytuj plan':'Zaplanuj dokument'}</h2><div class="field"><label>Dokument</label><select id="f-action-kind"><option value="cesja" ${a?.kind==='cesja'?'selected':''}>Cesja</option><option value="aneks" ${a?.kind==='aneks'?'selected':''}>Aneks</option><option value="wypowiedzenie" ${a?.kind==='wypowiedzenie'?'selected':''}>Wypowiedzenie</option></select></div><div class="field"><label>Termin przygotowania</label><input id="f-action-date" type="date" value="${esc(a?.dueOn||'')}"></div><div class="field"><label>Uwagi</label><textarea id="f-action-notes" maxlength="1000">${esc(a?.notes||'')}</textarea></div><div class="modal-actions">${a&&!a.completedAt?'<button class="ghost" id="complete-rental-action">Wykonane</button>':''}${close}<button class="goldbtn" id="save-rental-action">Zapisz</button></div></div></div>`;}
   if(state.modal==='newRental'||state.modal==='editRental'){
     const edit=state.modal==='editRental',r=edit?state.rentals.find(x=>x.id===state.rentalId):null;
@@ -1046,6 +1062,8 @@ setTimeout(()=>{
   document.querySelectorAll('[data-shift-delete]').forEach(b=>b.onclick=()=>deleteWorkShift(b.dataset.shiftDelete));
   document.getElementById('admin-attendance-start')?.addEventListener('click',adminStartAttendance);
   document.querySelectorAll('[data-admin-attendance-stop]').forEach(b=>b.onclick=()=>adminStopAttendance(b.dataset.adminAttendanceStop));
+  document.querySelectorAll('[data-edit-attendance-start]').forEach(b=>b.onclick=()=>{if(!isAdmin())return;state.attendanceId=b.dataset.editAttendanceStart;state.modal='editAttendanceStart';render();});
+  document.getElementById('save-attendance-start')?.addEventListener('click',saveAttendanceStart);
   updateTimers();
 }
 
