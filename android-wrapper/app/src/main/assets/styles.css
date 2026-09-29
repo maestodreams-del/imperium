@@ -1457,3 +1457,10 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 .important-mission span{display:grid;gap:5px}.important-mission b{font-size:15px}
 .important-mission small{color:#9db4c2;font-size:11px}.important-mission em{font-size:10px;color:#8dc8e5;font-style:normal}
 @media(max-width:600px){.important-mission{align-items:flex-start;flex-direction:column}}
+.important-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.important-status{display:block;margin-top:8px;font-size:10px;letter-spacing:.1em;color:#91bdd1}
+.aureus-shell .bottomnav .navitem.important-level-blue{color:#8bcfff!important;background:rgba(34,103,160,.27)!important;box-shadow:inset 0 2px #54b7ff,0 0 12px rgba(49,155,240,.55)!important;animation:importantLight 2s ease-in-out infinite}
+.aureus-shell .bottomnav .navitem.important-level-yellow{color:#ffe699!important;background:rgba(151,111,18,.27)!important;box-shadow:inset 0 2px #f4ce4a,0 0 14px rgba(239,186,42,.6)!important;animation:importantLight 2s ease-in-out infinite}
+.aureus-shell .bottomnav .navitem.important-level-red{color:#ff9999!important;background:rgba(152,28,37,.33)!important;box-shadow:inset 0 2px #f25b65,0 0 16px rgba(234,51,65,.7)!important;animation:importantLight 1.6s ease-in-out infinite}
+@keyframes importantLight{50%{filter:brightness(1.5)}}
+@media(prefers-reduced-motion:reduce){.aureus-shell .bottomnav .navitem[class*="important-level-"]{animation:none}}
