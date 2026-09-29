@@ -14,10 +14,11 @@ const syncChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('imper
 let selectedFiles = [];
 let pollTimer = null;
 let bottomNavScrollLeft = 0;
+let salaryLoadSequence = 0;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
-  salaryManager:false, salaryCompensations:[], salaryAdjustments:[], salaryMonth:new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), salaryWorkerId:null, salaryPots:[], salaryAdditions:[], salaryLoadedMonth:null, salaryLoading:false, salaryAnimate:false, salaryFallingSource:null, salarySaving:false, rentalExpanded:{}, pdfZoom:1,
+  salaryManager:false, salaryCompensations:[], salaryAdjustments:[], salaryMonth:new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), salaryWorkerId:null, salaryPots:[], salaryAdditions:[], salaryLoadedMonth:null, salaryLoading:false, salarySaving:false, rentalExpanded:{}, pdfZoom:1,
   demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], rentalRooms: [], rentalDocuments: [], invoiceSellers: [], invoiceDrafts: [], invoiceId: null, invoiceLines: [], vouchers: [], inspectionId: null, rentalId: null, roomId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
 
@@ -90,8 +91,19 @@ function loadDemoDB(){
   const db=seed();seedDemoSalaryRules(db); localStorage.setItem(DB_KEY,JSON.stringify(db)); return db;
 }
 function seedDemoSalaryRules(db){
-  const presets=[[/^zenon|^zenek/i,'fixed',1200000,0],[/^nikolai|^nikolay/i,'fixed',1000000,0],[/^nikita/i,'fixed',800000,0],[/^dima|^dmitry/i,'fixed',600000,0],[/^alena|^alona|^alyona|^aleona/i,'hourly',0,2500]];
+  const presets=[[/^(zenon|zenek|зенон)(\s|$)/i,'fixed',1200000,0],[/^(nikolai|nikolay|nikolaj|mikalai|николай)(\s|$)/i,'fixed',1000000,0],[/^(nikita|mikita|никита)(\s|$)/i,'fixed',800000,0],[/^(dima|dmitry|dmitriy|dmytro|dymitr|дима|дмитрий)(\s|$)/i,'fixed',600000,0],[/^(alena|alona|aliona|alyona|aleona|olena|ал[её]на)(\s|$)/i,'hourly',0,2500]];
   for(const u of db.users){if(db.salaryCompensations.some(x=>x.profile_id===u.id))continue;const hit=presets.find(([re])=>re.test(u.name));if(hit)db.salaryCompensations.push({profile_id:u.id,pay_type:hit[1],fixed_grosz:hit[2],hourly_grosz:hit[3]});}
+}
+function creditDemoSalaryAttendance(attendance){
+  if(!attendance.endedAt)return;
+  const rule=state.db.salaryCompensations.find(x=>x.profile_id===attendance.userId&&x.pay_type==='hourly');
+  if(!rule)return;
+  const amount=Math.round((new Date(attendance.endedAt)-new Date(attendance.startedAt))*rule.hourly_grosz/3600000);
+  const rows=state.db.salaryAdjustments,existing=rows.find(x=>x.attendance_id===attendance.id);
+  if(amount<=0){if(existing)rows.splice(rows.indexOf(existing),1);return;}
+  const date=new Date(attendance.endedAt).toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'});
+  const values={profile_id:attendance.userId,month_start:date.slice(0,7)+'-01',amount_grosz:amount,reason:'Godziny pracy · '+date.split('-').reverse().join('.'),kind:'attendance',attendance_id:attendance.id};
+  if(existing)Object.assign(existing,values);else rows.push({id:uid(),created_at:nowISO(),...values});
 }
 function saveDemoDB(){
   localStorage.setItem(DB_KEY,JSON.stringify(state.db));
@@ -131,6 +143,20 @@ function salaryData(){
   const base=rule.pay_type==='fixed'?Number(rule.fixed_grosz):0;
   return {pot,additions,adjustments,rule,base,total:(base+additions.length*2500+adjustments.reduce((sum,a)=>sum+Number(a.amount_grosz),0))/100};
 }
+function canManageRentals(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canManageRentals); }
+function canAddInspections(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canAddInspections); }
+function canCreateTasks(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canCreateTasks); }
+function canViewTeamHours(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canViewTeamHours); }
+function canViewImportant(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canViewImportant); }
+function allowedLocations(){ return isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser()?.locationIds.includes(l.id)); }
+function taskStatusLabel(s){ return ({open:'Nowe',in_progress:'W toku',review:'Do akceptacji',done:'Zakończone'}[s]||s); }
+function priorityLabel(p){ return ({normal:'Normalne',high:'Wysoki',urgent:'Pilne'}[p]||p); }
+function sanctionLabel(s){ return ({none:'Brak',note:'Uwaga',warning:'Ostrzeżenie',reprimand:'Upomnienie',other:'Inna sankcja'}[s]||s||'Brak'); }
+function disciplineLabel(s){ return ({note:'Uwaga',warning:'Ostrzeżenie',reprimand:'Upomnienie',other:'Inna'}[s]||s||'Wpis'); }
+function coinKindLabel(k){ return ({task_reward:'Nagroda za zadanie',task_bonus:'Bonus za wykonanie',task_penalty:'Niewykonanie zadania',adjustment:'Korekta administratora',voucher_redemption:'Wymiana na voucher'}[k]||k||'Nikitocoiny'); }
+function voucherLabel(k){return ({hours_2:'2 godziny wolnego',hours_4:'4 godziny wolnego',day:'Dzień wolny',bonus_500:'Premia 500 zł'}[k]||k);}
+function voucherState(v){if(v.kind==='bonus_500')return v.status==='paid'?'Wypłacono':'Do wypłaty';return Date.now()<new Date(v.startsAt)?'Zaplanowany':Date.now()<new Date(v.endsAt)?'Aktywny':'Zakończony';}
+function voucherRows(userId){return (state.mode==='demo'?state.db?.vouchers:state.vouchers||[]).filter(v=>!userId||v.userId===userId).sort((a,b)=>new Date(b.redeemedAt)-new Date(a.redeemedAt));}
 function shiftsFor(userId){return (state.mode==='demo'?state.db?.shifts:state.shifts||[]).filter(s=>!userId||s.userId===userId).sort((a,b)=>new Date(a.startsAt)-new Date(b.startsAt));}
 function shiftForVoucher(kind,start,end,userId){return kind==='bonus_500'||shiftsFor(userId).some(s=>kind==='day'?new Date(s.startsAt)>=start&&new Date(s.startsAt)<end:new Date(s.startsAt)<=start&&new Date(s.endsAt)>=end);}
 function voucherCard(v,admin=false){const s=voucherState(v),period=v.kind==='bonus_500'?'Premia do realizacji przez administratora':`${fmtDate(v.startsAt)} – ${fmtDate(v.endsAt)}`;return `<div class="voucher-card"><div><b>${esc(voucherLabel(v.kind))}</b><span class="voucher-state" data-voucher-state="${esc(v.startsAt||'')}|${esc(v.endsAt||'')}">${s}</span></div>${admin?`<small>${esc(getUser(v.userId)?.name||'Pracownik')}</small>`:''}<small>${period}</small>${v.kind!=='bonus_500'?`<strong data-voucher-until="${esc(v.endsAt)}" data-voucher-start="${esc(v.startsAt)}"></strong>`:''}${v.kind==='bonus_500'&&s==='Do wypłaty'&&admin?`<button class="smallbtn gold" data-voucher-paid="${v.id}">Oznacz jako wypłacone</button>`:''}</div>`;}
@@ -440,7 +466,7 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
-  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.invoiceSellers=state.db.invoiceSellers||[];state.invoiceDrafts=state.db.invoiceDrafts||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
+  if(state.mode==='demo'){state.attendance=state.db.attendance||[];state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.invoiceSellers=state.db.invoiceSellers||[];state.invoiceDrafts=state.db.invoiceDrafts||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
   if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
   if(!isAdmin()&&state.tab==='invoices')state.tab='tasks';
   if(!canViewImportant()&&state.tab==='important')state.tab='tasks';
@@ -458,17 +484,21 @@ function render(){
   bind();
 }
 async function loadSalaryMonth({refresh=false}={}){
-  if(state.mode!=='cloud'||state.salaryLoading||!currentUser())return;
+  if(state.mode!=='cloud'||!currentUser())return;
   if(!refresh&&state.salaryLoadedMonth===state.salaryMonth)return;
+  if(!refresh&&state.salaryLoading&&state.salaryRequestedMonth===state.salaryMonth)return;
+  const request=++salaryLoadSequence,month=state.salaryMonth,owner=currentUser().id,wasLoaded=state.salaryLoadedMonth===month;
+  state.salaryRequestedMonth=month;
   state.salaryLoading=true;
   try{
-    const [pots,adjustments,compensations]=await Promise.all([pgGet(`salary_pots?select=*&month_start=eq.${salaryMonthKey()}`),pgGet(`salary_adjustments?select=*&month_start=eq.${salaryMonthKey()}&order=created_at.desc`),pgGet('salary_compensation?select=*')]);
+    const [pots,adjustments,compensations]=await Promise.all([pgGet(`salary_pots?select=*&month_start=eq.${month}-01`),pgGet(`salary_adjustments?select=*&month_start=eq.${month}-01&order=created_at.desc`),pgGet('salary_compensation?select=*')]);
     const ids=pots.map(p=>p.id);
     const additions=ids.length?await pgGet(`salary_additions?select=*&pot_id=in.(${ids.join(',')})&order=created_at.desc`):[];
-    state.salaryPots=pots;state.salaryAdditions=additions;state.salaryAdjustments=adjustments;state.salaryCompensations=compensations;state.salaryLoadedMonth=state.salaryMonth;
-    if(state.tab==='salary'&&!state.loading)updateSalaryView();
-  }catch(e){toast(e.message||'Nie udało się pobrać pensji.');}
-  finally{state.salaryLoading=false;}
+    if(request!==salaryLoadSequence||state.mode!=='cloud'||currentUser()?.id!==owner||state.salaryMonth!==month)return;
+    state.salaryPots=pots;state.salaryAdditions=additions;state.salaryAdjustments=adjustments;state.salaryCompensations=compensations;state.salaryLoadedMonth=month;
+    if(state.tab==='salary'&&!state.loading)updateSalaryView({syncRuleInputs:!wasLoaded});
+  }catch(e){if(request===salaryLoadSequence)toast(e.message||'Nie udało się pobrać pensji.');}
+  finally{if(request===salaryLoadSequence)state.salaryLoading=false;}
 }
 function salaryHistoryRows({additions,adjustments}){
   const entries=[...adjustments.map(a=>({amount:Number(a.amount_grosz)/100,text:a.reason,when:a.created_at})),...additions.map(a=>({amount:25,text:'Wcześniejsza wpłata',when:a.created_at}))].sort((a,b)=>b.when.localeCompare(a.when));
@@ -484,12 +514,12 @@ function renderSalaryPage(){
     <div class="salary-card"><div class="salary-owner">${esc(worker?.name||'Pracownik')}</div><div class="salary-total"><span id="salary-total-value">${loading?'…':salaryMoney(total)}</span></div><div class="salary-target" id="salary-type">${esc(typeLabel)}</div>
     <div class="salary-target" id="salary-target">${goal?`Cel: ${salaryMoney(goal)} · ${pct}%`:'Cel miesiąca nieustawiony'}</div><div class="salary-track" role="progressbar" aria-label="Postęp wynagrodzenia" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span id="salary-progress" style="width:${pct}%"></span></div>
     <div class="salary-chest" role="img" aria-label="Łączne wynagrodzenie"><div class="salary-chest-lid"></div><div class="salary-chest-body"><span>✦ AURELIA ✦</span><b id="salary-chest-total">${salaryMoney(total)}</b></div></div>
-    ${isSalaryManager()?`<div class="salary-rule"><h3>Zasady wynagrodzenia</h3><div class="salary-rule-fields"><label>Rodzaj<select id="salary-pay-type"><option value="none" ${rule.pay_type==='none'?'selected':''}>Brak stawki</option><option value="fixed" ${rule.pay_type==='fixed'?'selected':''}>Stałe miesięczne</option><option value="hourly" ${rule.pay_type==='hourly'?'selected':''}>Godzinowe</option></select></label><label>Stałe zł / miesiąc<input id="salary-fixed" type="number" min="0" step="0.01" value="${(rule.fixed_grosz/100).toFixed(2)}"></label><label>zł / godz.<input id="salary-hourly" type="number" min="0" step="0.01" value="${(rule.hourly_grosz/100).toFixed(2)}"></label></div><button class="smallbtn" id="salary-save-rule">Zapisz stawkę</button></div>
+    ${isSalaryManager()?`<fieldset id="salary-manager-controls" class="salary-manager-controls" ${loading||state.salarySaving?'disabled':''}><div class="salary-rule"><h3>Zasady wynagrodzenia</h3><div class="salary-rule-fields"><label>Rodzaj<select id="salary-pay-type"><option value="none" ${rule.pay_type==='none'?'selected':''}>Brak stawki</option><option value="fixed" ${rule.pay_type==='fixed'?'selected':''}>Stałe miesięczne</option><option value="hourly" ${rule.pay_type==='hourly'?'selected':''}>Godzinowe</option></select></label><label>Stałe zł / miesiąc<input id="salary-fixed" type="number" min="0" step="0.01" value="${(rule.fixed_grosz/100).toFixed(2)}"></label><label>zł / godz.<input id="salary-hourly" type="number" min="0" step="0.01" value="${(rule.hourly_grosz/100).toFixed(2)}"></label></div><button class="smallbtn" id="salary-save-rule">Zapisz stawkę</button></div>
     <div class="salary-adjust"><h3>Korekta wynagrodzenia</h3><div class="salary-adjust-fields"><label>Zmiana<select id="salary-sign"><option value="plus">+ Dodaj</option><option value="minus">− Odejmij</option></select></label><label>Kwota zł<input id="salary-amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="25,00"></label></div><label>Za co?<input id="salary-reason" maxlength="500" placeholder="Np. premia, zaliczka lub korekta"></label><button class="goldbtn" id="salary-add-adjustment">Zapisz korektę</button></div>
-    <div class="salary-admin"><label>Cel (zł)<input id="salary-goal" type="number" min="0" max="10000000" step="25" value="${goal}"></label><button id="salary-save-goal" class="smallbtn">Zapisz cel</button></div>`:'<p class="salary-private">Szczegóły wynagrodzenia widzisz tylko Ty i właściciel IMPERIUM.</p>'}</div>
+    <div class="salary-admin"><label>Cel (zł)<input id="salary-goal" type="number" min="0" max="10000000" step="25" value="${goal}"></label><button id="salary-save-goal" class="smallbtn">Zapisz cel</button></div></fieldset>`:'<p class="salary-private">Szczegóły wynagrodzenia widzisz tylko Ty i właściciel IMPERIUM.</p>'}</div>
     <div class="salary-history"><h3>Rozliczenie miesiąca</h3><p id="salary-base-row">${esc(typeLabel)}</p><div class="salary-history-rows" id="salary-history-rows">${loading?'<p>Ładowanie…</p>':salaryHistoryRows(data)}</div></div></div></section>`;
 }
-function updateSalaryView(){
+function updateSalaryView({syncRuleInputs=false}={}){
   if(state.tab!=='salary')return;
   const data=salaryData(),{pot,rule,base,total}=data,goal=pot?.goal_zl||0,pct=goal?Math.max(0,Math.min(100,Math.round(total/goal*100))):0;
   const typeLabel=rule.pay_type==='fixed'?`Stałe wynagrodzenie: ${salaryMoney(base/100)}`:rule.pay_type==='hourly'?`Godzinowo: ${salaryMoney(rule.hourly_grosz/100)} / godz. · naliczane po zakończeniu meldunku`:'Brak ustawionej stawki';
@@ -500,46 +530,53 @@ function updateSalaryView(){
   const target=document.getElementById('salary-target');if(target)target.textContent=goal?`Cel: ${salaryMoney(goal)} · ${pct}%`:'Cel miesiąca nieustawiony';
   const bar=document.querySelector('.salary-track'),progress=document.getElementById('salary-progress');if(bar)bar.setAttribute('aria-valuenow',String(pct));if(progress)progress.style.width=`${pct}%`;
   const rows=document.getElementById('salary-history-rows');if(rows)rows.innerHTML=salaryHistoryRows(data);
+  if(syncRuleInputs){
+    const values={'salary-pay-type':rule.pay_type,'salary-fixed':(rule.fixed_grosz/100).toFixed(2),'salary-hourly':(rule.hourly_grosz/100).toFixed(2),'salary-goal':goal};
+    for(const [id,value] of Object.entries(values)){const input=document.getElementById(id);if(input)input.value=value;}
+  }
+  updateSalaryControls();
 }
+function salaryReady(){return state.mode==='demo'||state.salaryLoadedMonth===state.salaryMonth;}
+function updateSalaryControls(){const controls=document.getElementById('salary-manager-controls');if(controls)controls.disabled=state.salarySaving||!salaryReady();}
 function salaryInputGrosz(id){const value=Number(document.getElementById(id)?.value);return Number.isFinite(value)?Math.round(value*100):NaN;}
 function bindSalary(){
   document.getElementById('salary-month')?.addEventListener('change',e=>{if(!/^\d{4}-\d{2}$/.test(e.target.value))return;state.salaryMonth=e.target.value;render();loadSalaryMonth();});
   document.getElementById('salary-worker')?.addEventListener('change',e=>{if(!isSalaryManager())return;state.salaryWorkerId=e.target.value;render();});
   document.getElementById('salary-add-adjustment')?.addEventListener('click',async e=>{
-    if(!isSalaryManager()||state.salarySaving)return;
+    if(!isSalaryManager()||state.salarySaving||!salaryReady())return;
     const worker=salaryWorker(),month=salaryMonthKey(),raw=document.getElementById('salary-amount')?.value,amount=salaryInputGrosz('salary-amount'),reason=document.getElementById('salary-reason')?.value.trim()||'',sign=document.getElementById('salary-sign')?.value==='minus'?-1:1;
     if(!raw||!Number.isSafeInteger(amount)||amount<=0||amount>1000000000||!reason)return toast('Podaj kwotę większą od zera i powód korekty.');
-    state.salarySaving=true;e.currentTarget.disabled=true;
+    state.salarySaving=true;updateSalaryControls();
     try{
       if(state.mode==='demo'){state.db.salaryAdjustments.push({id:uid(),profile_id:worker.id,month_start:month,amount_grosz:sign*amount,reason,kind:'manual',created_at:nowISO()});saveDemoDB();}
       else{await cloudFetch('/rest/v1/rpc/salary_add_adjustment',{method:'POST',body:{p_profile:worker.id,p_month:month,p_amount_grosz:sign*amount,p_reason:reason}});await loadSalaryMonth({refresh:true});}
-      if(state.tab==='salary'&&salaryWorker()?.id===worker.id&&salaryMonthKey()===month){document.getElementById('salary-amount').value='';document.getElementById('salary-reason').value='';updateSalaryView();}
+      if(state.tab==='salary'&&salaryWorker()?.id===worker.id&&salaryMonthKey()===month){const amountField=document.getElementById('salary-amount'),reasonField=document.getElementById('salary-reason');if(amountField)amountField.value='';if(reasonField)reasonField.value='';updateSalaryView();}
     }catch(error){toast(error.message||'Nie udało się zapisać korekty.');}
-    finally{state.salarySaving=false;if(e.currentTarget.isConnected)e.currentTarget.disabled=false;}
+    finally{state.salarySaving=false;updateSalaryControls();}
   });
   document.getElementById('salary-save-rule')?.addEventListener('click',async e=>{
-    if(!isSalaryManager()||state.salarySaving)return;
+    if(!isSalaryManager()||state.salarySaving||!salaryReady())return;
     const worker=salaryWorker(),type=document.getElementById('salary-pay-type')?.value,fixed=salaryInputGrosz('salary-fixed'),hourly=salaryInputGrosz('salary-hourly');
     if(!['none','fixed','hourly'].includes(type)||!Number.isSafeInteger(fixed)||fixed<0||fixed>1000000000||!Number.isSafeInteger(hourly)||hourly<0||hourly>10000000)return toast('Sprawdź kwoty wynagrodzenia.');
-    state.salarySaving=true;e.currentTarget.disabled=true;
+    state.salarySaving=true;updateSalaryControls();
     try{
       if(state.mode==='demo'){const row=state.db.salaryCompensations.find(x=>x.profile_id===worker.id);if(row)Object.assign(row,{pay_type:type,fixed_grosz:fixed,hourly_grosz:hourly});else state.db.salaryCompensations.push({profile_id:worker.id,pay_type:type,fixed_grosz:fixed,hourly_grosz:hourly});saveDemoDB();}
       else{await cloudFetch('/rest/v1/rpc/salary_set_compensation',{method:'POST',body:{p_profile:worker.id,p_type:type,p_fixed_grosz:fixed,p_hourly_grosz:hourly}});await loadSalaryMonth({refresh:true});}
       if(state.tab==='salary'&&salaryWorker()?.id===worker.id)updateSalaryView();
     }catch(error){toast(error.message||'Nie udało się zapisać stawki.');}
-    finally{state.salarySaving=false;if(e.currentTarget.isConnected)e.currentTarget.disabled=false;}
+    finally{state.salarySaving=false;updateSalaryControls();}
   });
   document.getElementById('salary-save-goal')?.addEventListener('click',async e=>{
-    if(!isSalaryManager()||state.salarySaving)return;
+    if(!isSalaryManager()||state.salarySaving||!salaryReady())return;
     const worker=salaryWorker(),month=salaryMonthKey(),goal=Number(document.getElementById('salary-goal')?.value);
     if(!Number.isInteger(goal)||goal<0||goal>10000000)return toast('Podaj cel od 0 do 10 000 000 zł.');
-    state.salarySaving=true;e.currentTarget.disabled=true;
+    state.salarySaving=true;updateSalaryControls();
     try{
       if(state.mode==='demo'){let pot=state.db.salaryPots.find(p=>p.profile_id===worker.id&&p.month_start===month);if(pot)pot.goal_zl=goal;else state.db.salaryPots.push({id:uid(),profile_id:worker.id,month_start:month,goal_zl:goal});saveDemoDB();}
       else{await cloudFetch('/rest/v1/rpc/salary_set_goal',{method:'POST',body:{p_profile:worker.id,p_month:month,p_goal:goal}});await loadSalaryMonth({refresh:true});}
       if(state.tab==='salary'&&salaryWorker()?.id===worker.id&&salaryMonthKey()===month)updateSalaryView();
     }catch(error){toast(error.message||'Nie udało się zapisać celu.');}
-    finally{state.salarySaving=false;if(e.currentTarget.isConnected)e.currentTarget.disabled=false;}
+    finally{state.salarySaving=false;updateSalaryControls();}
   });
 }
 function renderOverlayOn(baseFn,modalFn){ baseFn(); app.insertAdjacentHTML('beforeend',modalFn()); bindCloudSetup(); }
@@ -765,8 +802,8 @@ async function startAttendance(){
 async function stopAttendance(){
   const a=(state.attendance||[]).find(x=>x.userId===currentUser().id&&!x.endedAt);if(!a)return;
   await withAction('Kończenie pracy…',async()=>{
-    if(state.mode==='demo'){a.endedAt=nowISO();await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);saveDemoDB();}
-    else{await cloudFetch('/rest/v1/rpc/stop_work_attendance',{method:'POST',body:{}});await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);await loadCloudDB({silent:true});}
+    if(state.mode==='demo'){a.endedAt=nowISO();creditDemoSalaryAttendance(a);await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);saveDemoDB();}
+    else{await cloudFetch('/rest/v1/rpc/stop_work_attendance',{method:'POST',body:{}});state.salaryLoadedMonth=null;await logEvent('attendance_stop',`${currentUser().name} zakończył pracę — ${getLoc(a.locationId)?.name||'obiekt'}`);await loadCloudDB({silent:true});}
     notify('Meldunek IMPERIUM',`Zakończono pracę: ${getLoc(a.locationId)?.name||'obiekt'}`);
   });
 }
@@ -818,8 +855,8 @@ async function saveAttendanceStart(){
   const overlaps=state.attendance.some(other=>other.id!==a.id&&other.userId===a.userId&&new Date(other.startedAt)<end&&new Date(other.endedAt||Date.now())>start);
   if(overlaps)return toast('Ten czas nakłada się na inny meldunek pracownika.');
   await withAction('Poprawianie godziny rozpoczęcia…',async()=>{
-    if(state.mode==='demo'){a.startedAt=start.toISOString();saveDemoDB();}
-    else{await cloudFetch('/rest/v1/rpc/admin_change_attendance_start',{method:'POST',body:{p_attendance_id:a.id,p_started_at:start.toISOString()}});await loadCloudDB({silent:true});}
+    if(state.mode==='demo'){a.startedAt=start.toISOString();creditDemoSalaryAttendance(a);saveDemoDB();}
+    else{await cloudFetch('/rest/v1/rpc/admin_change_attendance_start',{method:'POST',body:{p_attendance_id:a.id,p_started_at:start.toISOString()}});state.salaryLoadedMonth=null;await loadCloudDB({silent:true});}
     await logEvent('attendance_edit',`Poprawiono początek pracy: ${getUser(a.userId)?.name||'pracownik'} · ${getLoc(a.locationId)?.name||'obiekt'}`);
     state.modal=null;state.attendanceId=null;
   });
@@ -828,8 +865,8 @@ async function adminStopAttendance(userId){
   if(!isAdmin())return;
   await withAction('Kończenie meldunku…',async()=>{
     if(state.mode==='demo'){
-      const a=state.db.attendance.find(x=>x.userId===userId&&!x.endedAt);if(!a)throw Error('Brak aktywnego meldunku.');a.endedAt=nowISO();a.endedBy=currentUser().id;saveDemoDB();
-    }else{await cloudFetch('/rest/v1/rpc/admin_stop_attendance',{method:'POST',body:{p_profile:userId}});await loadCloudDB({silent:true});}
+      const a=state.db.attendance.find(x=>x.userId===userId&&!x.endedAt);if(!a)throw Error('Brak aktywnego meldunku.');a.endedAt=nowISO();a.endedBy=currentUser().id;creditDemoSalaryAttendance(a);saveDemoDB();
+    }else{await cloudFetch('/rest/v1/rpc/admin_stop_attendance',{method:'POST',body:{p_profile:userId}});state.salaryLoadedMonth=null;await loadCloudDB({silent:true});}
     await logEvent('attendance_stop',`Administrator zakończył meldunek: ${getUser(userId)?.name||'pracownik'}`);
   });
 }

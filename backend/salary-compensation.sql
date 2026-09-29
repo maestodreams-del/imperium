@@ -32,16 +32,16 @@ grant select on public.salary_compensation,public.salary_adjustments to authenti
 -- Seed by distinctive given names. The salary owner can correct any association in the app.
 insert into public.salary_compensation(profile_id,pay_type,fixed_grosz,hourly_grosz)
 select id,
-  case when full_name ~* '^(Alena|Alona|Aliona|Alyona|Aleona|Alyona|Ал[её]на)( |$)' then 'hourly' else 'fixed' end,
+  case when full_name ~* '^(Alena|Alona|Aliona|Alyona|Aleona|Olena|Ал[её]на)( |$)' then 'hourly' else 'fixed' end,
   case
     when full_name ~* '^(Zenon|Zenek|Зенон)( |$)' then 1200000
-    when full_name ~* '^(Nikolai|Nikolay|Nikolaj|Николай)( |$)' then 1000000
-    when full_name ~* '^(Nikita|Никита)( |$)' then 800000
+    when full_name ~* '^(Nikolai|Nikolay|Nikolaj|Mikalai|Николай)( |$)' then 1000000
+    when full_name ~* '^(Nikita|Mikita|Никита)( |$)' then 800000
     when full_name ~* '^(Dima|Dmitry|Dmitriy|Dmytro|Dymitr|Дима|Дмитрий)( |$)' then 600000
     else 0 end,
-  case when full_name ~* '^(Alena|Alona|Aliona|Alyona|Aleona|Ал[её]на)( |$)' then 2500 else 0 end
+  case when full_name ~* '^(Alena|Alona|Aliona|Alyona|Aleona|Olena|Ал[её]на)( |$)' then 2500 else 0 end
 from public.profiles
-where full_name ~* '^(Zenon|Zenek|Зенон|Nikolai|Nikolay|Nikolaj|Николай|Nikita|Никита|Dima|Dmitry|Dmitriy|Dmytro|Dymitr|Дима|Дмитрий|Alena|Alona|Aliona|Alyona|Aleona|Ал[её]на)( |$)'
+where full_name ~* '^(Zenon|Zenek|Зенон|Nikolai|Nikolay|Nikolaj|Mikalai|Николай|Nikita|Mikita|Никита|Dima|Dmitry|Dmitriy|Dmytro|Dymitr|Дима|Дмитрий|Alena|Alona|Aliona|Alyona|Aleona|Olena|Ал[её]на)( |$)'
 on conflict (profile_id) do nothing;
 
 create or replace function public.salary_set_compensation(p_profile uuid,p_type text,p_fixed_grosz integer,p_hourly_grosz integer)
@@ -81,14 +81,20 @@ create or replace function public.salary_credit_attendance() returns trigger
 language plpgsql security definer set search_path='' as $$
 declare v_rate integer; v_amount integer; v_month date;
 begin
-  if new.ended_at is null then return new; end if;
+  if new.ended_at is null then
+    delete from public.salary_adjustments where attendance_id=new.id;
+    return new;
+  end if;
   if tg_op='UPDATE' and old.ended_at is not distinct from new.ended_at
      and old.started_at is not distinct from new.started_at then return new; end if;
   select hourly_grosz into v_rate from public.salary_compensation
     where profile_id=new.profile_id and pay_type='hourly';
   if v_rate is null or v_rate=0 then return new; end if;
   v_amount:=round(extract(epoch from (new.ended_at-new.started_at))::numeric*v_rate/3600)::integer;
-  if v_amount<=0 then return new; end if;
+  if v_amount<=0 then
+    delete from public.salary_adjustments where attendance_id=new.id;
+    return new;
+  end if;
   v_month:=date_trunc('month',new.ended_at at time zone 'Europe/Warsaw')::date;
   insert into public.salary_adjustments(profile_id,month_start,amount_grosz,reason,kind,attendance_id)
     values(new.profile_id,v_month,v_amount,'Godziny pracy · '||to_char(new.ended_at at time zone 'Europe/Warsaw','DD.MM.YYYY'),'attendance',new.id)
@@ -97,5 +103,5 @@ begin
   return new;
 end $$;
 drop trigger if exists salary_attendance_credit on public.work_attendance;
-create trigger salary_attendance_credit after update of started_at,ended_at on public.work_attendance
+create trigger salary_attendance_credit after insert or update of started_at,ended_at on public.work_attendance
   for each row execute function public.salary_credit_attendance();
