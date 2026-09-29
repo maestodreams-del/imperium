@@ -1421,3 +1421,21 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 .shift-row:last-child{border-bottom:0}
 .shift-row b,.shift-row small{display:block}
 .shift-row small{margin-top:5px;color:#aabed3;line-height:1.4}
+/* Profile team overview */
+.profile-tabs{display:flex;gap:8px;flex-wrap:wrap}
+.team-hours{display:grid;gap:14px}
+.team-hours .settings-card{margin:0;min-width:0}
+.team-hours .team-log-row{padding:10px 0;border-bottom:1px solid rgba(136,180,213,.18);display:grid;gap:5px}
+.team-hours .team-log-row:last-child{border-bottom:0}
+.team-hours .team-log-row b{font-size:13px;color:#d5e2eb}
+.team-hours .team-log-row small{font-size:11px;color:#aabed3}
+.team-month-controls{display:flex;align-items:center;justify-content:center;gap:16px;margin:12px 0;text-transform:capitalize}
+.team-month-controls strong{min-width:130px;text-align:center}
+.team-calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:12px}
+.team-weekday{text-align:center;font-size:10px;color:#aabed3;padding-bottom:5px}
+.team-day{min-height:58px;min-width:0;border:1px solid rgba(136,180,213,.13);background:#0a131b;padding:5px;display:grid;align-content:start;gap:5px}
+.team-day.worked{border-color:rgba(110,177,212,.5);background:#102333}
+.team-day.today{outline:1px solid #a4d4ec}
+.team-day b{font-size:11px}.team-day small{font-size:10px;color:#9bcbe0;line-height:1.3;overflow-wrap:anywhere}
+.team-day small span{display:block;color:#8b9da9;font-size:9px}
+@media(max-width:600px){.team-day{min-height:53px;padding:3px}.team-day small{font-size:9px}.team-month-controls{gap:8px}}

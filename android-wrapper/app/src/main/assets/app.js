@@ -15,7 +15,7 @@ let selectedFiles = [];
 let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
-  tab: 'tasks', filter: 'all', workerPeriod: 'all', modal: null, taskId: null, locationId: null, userId: null,
+  tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
   demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, loading: false, cloudError: '', lastEventAt: null
 };
 
@@ -33,7 +33,7 @@ function seed(){
     version:2,
     users:[
       {id:'u-admin',name:'Administrator',role:'admin',locationIds:['l1','l2','l3','l4','l5','l6'],active:true},
-      {id:'u-zenon',name:'Zenon',role:'worker',canManageRentals:true,canAddInspections:true,canCreateTasks:true,locationIds:['l3','l4'],active:true},
+      {id:'u-zenon',name:'Zenon',role:'worker',canManageRentals:true,canAddInspections:true,canCreateTasks:true,canViewTeamHours:true,locationIds:['l3','l4'],active:true},
       {id:'u-mikolaj',name:'Mikołaj',role:'worker',locationIds:['l1','l2','l5','l6'],active:true},
       {id:'u-nikolai',name:'Nikolai',role:'worker',locationIds:['l1','l2','l4'],active:true}
     ],
@@ -115,6 +115,7 @@ function isAdmin(){ return currentUser()?.role==='admin'; }
 function canManageRentals(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canManageRentals); }
 function canAddInspections(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canAddInspections); }
 function canCreateTasks(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canCreateTasks); }
+function canViewTeamHours(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canViewTeamHours); }
 function allowedLocations(){ return isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser()?.locationIds.includes(l.id)); }
 function taskStatusLabel(s){ return ({open:'Nowe',in_progress:'W toku',review:'Do akceptacji',done:'Zakończone'}[s]||s); }
 function priorityLabel(p){ return ({normal:'Normalne',high:'Wysoki',urgent:'Pilne'}[p]||p); }
@@ -300,7 +301,7 @@ async function loadCloudDB({silent=false}={}){
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
     const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts]=await Promise.all([
-      pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,created_at&order=created_at.asc'),
+      pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
       pgGet('tasks?select=*&order=created_at.desc'),
@@ -320,7 +321,7 @@ async function loadCloudDB({silent=false}={}){
     state.rentals=(rentals||[]).map(mapRental);
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
     state.shifts=(shifts||[]).map(s=>({id:s.id,userId:s.profile_id,locationId:s.location_id,startsAt:s.starts_at,endsAt:s.ends_at}));
-    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,canAddInspections:!!p.can_add_inspections,canCreateTasks:!!p.can_create_tasks,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
+    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,canAddInspections:!!p.can_add_inspections,canCreateTasks:!!p.can_create_tasks,canViewTeamHours:!!p.can_view_team_hours,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
     state.lastEventAt=newest; state.cloudError=''; state.loading=false;
@@ -679,7 +680,8 @@ function renderProfilePage(){
   const active=ps.mine.filter(t=>t.status!=='done').sort((a,b)=>new Date(a.deadlineAt||a.createdAt)-new Date(b.deadlineAt||b.createdAt));
   const completed=ps.mine.filter(t=>t.status==='done').slice().sort((a,b)=>new Date(b.completedAt||b.createdAt)-new Date(a.completedAt||a.createdAt)).slice(0,5);
   return `<section class="profile-page">
-    <div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL COMMAND FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div><div class="profile-balance"><span>SALDO</span><b>${coinBalance(u.id)} NK</b></div></div>
+    ${canViewTeamHours()?`<div class="profile-tabs"><button class="smallbtn ${state.profileView==='mine'?'gold':''}" data-profile-view="mine">Mój profil</button><button class="smallbtn ${state.profileView==='team'?'gold':''}" data-profile-view="team">Obiekty i zespół</button></div>`:''}
+    ${state.profileView==='team'&&canViewTeamHours()?renderTeamHoursPage():`<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL COMMAND FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div><div class="profile-balance"><span>SALDO</span><b>${coinBalance(u.id)} NK</b></div></div>
     <div class="profile-progress-grid">${renderProgressBar('MOJA REALIZACJA',ps.done,ps.total,ps.pct,ps.active+' aktywnych')}${renderProgressBar('REALIZACJA IMPERIUM',allDone,all.length,allPct,'wszystkie zadania systemu')}</div>
     <div class="settings-card shift-list"><div class="subheading">Mój grafik pracy</div>${shiftsFor(u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,20).map(s=>`<div class="shift-row"><div><b>${esc(getLoc(s.locationId)?.name||'Obiekt')}</b><small>${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div></div>`).join('')||'<div class="empty compact">Administrator nie dodał jeszcze zmian.</div>'}</div>
     <div class="voucher-exchange"><div class="eyebrow">WYMIANA NK</div><h3>Imperatorski wymiennik</h3><div class="voucher-options"><label><input type="radio" name="voucher-kind" value="hours_2" checked> 1000 NK · 2 godziny</label><label><input type="radio" name="voucher-kind" value="hours_4"> 2000 NK · 4 godziny</label><label><input type="radio" name="voucher-kind" value="day"> 5000 NK · dzień wolny</label><label><input type="radio" name="voucher-kind" value="bonus_500"> 7500 NK · premia 500 zł</label></div><div class="field" id="voucher-time-field"><label>Początek wolnego (data i godzina)</label><input type="datetime-local" id="voucher-start"></div><div class="field" id="voucher-day-field" hidden><label>Dzień wolny</label><input type="date" id="voucher-day"></div><p class="subtle">Godziny wolnego muszą mieścić się w zapisanej zmianie, a dzień wolny wymaga zmiany w tym dniu. Punkty są pobierane przy wymianie. Premia tworzy wniosek widoczny dla administratora; wypłata jest potwierdzana osobno.</p><button class="goldbtn" id="redeem-voucher">Wymień Nikitocoiny</button></div>
@@ -688,7 +690,53 @@ function renderProfilePage(){
     <div class="profile-missions">${active.length?active.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak aktywnych zadań.</div>'}</div>
     <div class="profile-section-head compact"><div><div class="eyebrow">ARCHIWUM</div><h3>Ostatnio wykonane</h3></div></div>
     <div class="profile-history">${completed.length?completed.map(t=>`<button class="history-row" data-history-task="${t.id}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'')} • ${fmtDate(t.completedAt||t.createdAt)}</small></span><em>WYKONANE</em></button>`).join(''):'<div class="empty compact">Brak wykonanych zadań.</div>'}</div>
+  `}
   </section>`;
+}
+
+const teamDayFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Warsaw',year:'numeric',month:'2-digit',day:'2-digit'});
+const teamDay=iso=>teamDayFormat.format(new Date(iso));
+const teamHours=ms=>(Math.max(0,ms)/3600000).toLocaleString('pl-PL',{minimumFractionDigits:1,maximumFractionDigits:1});
+function teamDailyHours(rows,month){
+  const totals={};
+  for(const a of rows){
+    const start=new Date(a.startedAt).getTime(),end=new Date(a.endedAt||Date.now()).getTime();
+    if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)continue;
+    let cursor=start,guard=0;
+    while(cursor<end&&guard++<370){
+      const day=teamDay(cursor),max=Math.min(end,cursor+36*3600000);
+      let next=max;
+      if(teamDay(max-1)!==day){let lo=cursor+1,hi=max;while(lo<hi){const mid=Math.floor((lo+hi)/2);if(teamDay(mid)===day)lo=mid+1;else hi=mid;}next=lo;}
+      if(day.startsWith(month))totals[day]=(totals[day]||0)+(next-cursor);
+      cursor=next;
+    }
+  }
+  return totals;
+}
+async function loadTeamMonth(){
+  if(!canViewTeamHours())return;
+  const month=state.teamMonth;
+  if(state.mode==='demo'){state.teamMonthRows=(state.db.attendance||[]);state.teamMonthLoaded=month;state.teamMonthOwner=currentUser().id;render();return;}
+  state.teamMonthLoaded=null;render();
+  try{
+    const [year,m]=month.split('-').map(Number),start=new Date(Date.UTC(year,m-1,1)).toISOString(),end=new Date(Date.UTC(year,m,1)).toISOString();
+    const rows=await pgGet(`work_attendance?select=*&started_at=lt.${encodeURIComponent(end)}&or=(ended_at.gte.${encodeURIComponent(start)},ended_at.is.null)&order=started_at.asc&limit=5000`);
+    if(state.teamMonth!==month)return;
+    state.teamMonthRows=rows.map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at,startedBy:a.started_by,endedBy:a.ended_by}));state.teamMonthLoaded=month;state.teamMonthOwner=currentUser().id;render();
+  }catch(e){state.teamMonthLoaded='error';render();toast(e.message||'Nie udało się pobrać ewidencji.');}
+}
+function renderTeamHoursPage(){
+  const u=currentUser(),locationIds=new Set(isAdmin()?state.db.locations.map(l=>l.id):u.locationIds);
+  const month=state.teamMonth,loaded=state.teamMonthLoaded===month&&state.teamMonthOwner===u.id,rows=(loaded?state.teamMonthRows:[]).filter(a=>locationIds.has(a.locationId));
+  const related=state.db.users.filter(x=>x.role==='worker'&&x.locationIds.some(id=>locationIds.has(id)));
+  const selected=state.teamWorker==='all'?related:related.filter(x=>x.id===state.teamWorker);
+  const tasks=state.db.tasks.filter(t=>t.status==='done'&&locationIds.has(t.locationId)&&t.claimedBy&&(state.teamWorker==='all'||t.claimedBy===state.teamWorker)).sort((a,b)=>new Date(b.completedAt||0)-new Date(a.completedAt||0));
+  const today=teamDay(new Date()),[year,m]=month.split('-').map(Number),days=new Date(Date.UTC(year,m,0)).getUTCDate(),first=new Date(Date.UTC(year,m-1,1)).getUTCDay();
+  const monthLabel=new Intl.DateTimeFormat('pl-PL',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(Date.UTC(year,m-1,1)));
+  return `<div class="team-hours"><div class="profile-section-head"><div><div class="eyebrow">NADZÓR OBIEKTÓW</div><h3>Obiekty i zespół</h3></div></div><p class="subtle">${isAdmin()?'Wszystkie obiekty':'Tylko przypisane obiekty'} • godziny według meldunków w czasie polskim</p>
+  <div class="settings-card"><div class="subheading">Wykonane zadania</div>${tasks.map(t=>`<div class="team-log-row"><b>${esc(getUser(t.claimedBy)?.name||'Pracownik')} · ${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'Obiekt')} · ${fmtDate(t.completedAt)}</small></div>`).join('')||'<div class="empty compact">Brak wykonanych zadań.</div>'}</div>
+  <div class="settings-card"><div class="subheading">Rozpoczęcie i zakończenie pracy</div><div class="team-month-controls"><button class="smallbtn" data-team-month="-1">‹</button><strong>${esc(monthLabel)}</strong><button class="smallbtn" data-team-month="1">›</button></div><div class="field"><label>Pracownik</label><select id="team-worker"><option value="all">Wszyscy pracownicy</option>${related.map(x=>`<option value="${esc(x.id)}" ${x.id===state.teamWorker?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>${!loaded?`<div class="empty compact">${state.teamMonthLoaded==='error'?'Nie udało się pobrać meldunków. Zmień miesiąc, aby spróbować ponownie.':'Wczytywanie meldunków…'}</div>`:rows.filter(a=>state.teamWorker==='all'||a.userId===state.teamWorker).sort((a,b)=>new Date(b.startedAt)-new Date(a.startedAt)).slice(0,100).map(a=>`<div class="team-log-row"><b>${esc(getUser(a.userId)?.name||'Pracownik')} · ${esc(getLoc(a.locationId)?.name||'Obiekt')}</b><small>${fmtDate(a.startedAt)} → ${a.endedAt?fmtDate(a.endedAt):'W pracy'} · ${attendanceDuration(a)}</small></div>`).join('')||'<div class="empty compact">Brak meldunków w tym miesiącu.</div>'}</div>
+  ${loaded?selected.map(worker=>{const own=rows.filter(a=>a.userId===worker.id),totals=teamDailyHours(own,month),planned=teamDailyHours(shiftsFor(worker.id).filter(x=>locationIds.has(x.locationId)).map(x=>({startedAt:x.startsAt,endedAt:x.endsAt})),month),sum=Object.values(totals).reduce((a,b)=>a+b,0);return `<div class="settings-card team-calendar-card"><div class="subheading">${esc(worker.name)} · ${teamHours(sum)} godz.</div><div class="team-calendar">${['Pn','Wt','Śr','Cz','Pt','So','Nd'].map(x=>`<span class="team-weekday">${x}</span>`).join('')}${Array.from({length:(first+6)%7},()=>'<span></span>').join('')}${Array.from({length:days},(_,n)=>{const day=String(n+1).padStart(2,'0'),key=`${month}-${day}`,hours=totals[key]||0;return `<div class="team-day ${key===today?'today':''} ${hours?'worked':''}"><b>${n+1}</b><small>${hours?teamHours(hours)+' h':'—'}${planned[key]?`<span>plan ${teamHours(planned[key])} h</span>`:''}</small></div>`;}).join('')}</div></div>`;}).join(''):''}</div>`;
 }
 
 function renderSettingsPage(){
@@ -769,7 +817,7 @@ function renderModal(){
   if(state.modal==='newUser')return `<div class="modal-bg"><div class="modal"><h2>Nowy pracownik demo</h2><div class="field"><label>Imię / nazwa</label><input id="f-username"></div><div class="field"><label>Obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}"> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user">Dodaj</button></div></div></div>`;
   if(state.modal==='editUser'){
     const u=state.db.users.find(x=>x.id===state.userId);
-    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><label class="checkrow"><input id="f-add-inspections" type="checkbox" ${u.canAddInspections?'checked':''}> Może dodawać przeglądy w przypisanych obiektach</label><label class="checkrow"><input id="f-create-tasks" type="checkbox" ${u.canCreateTasks?'checked':''}> Może dodawać zadania w przypisanych obiektach</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
+    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><label class="checkrow"><input id="f-add-inspections" type="checkbox" ${u.canAddInspections?'checked':''}> Może dodawać przeglądy w przypisanych obiektach</label><label class="checkrow"><input id="f-create-tasks" type="checkbox" ${u.canCreateTasks?'checked':''}> Może dodawać zadania w przypisanych obiektach</label><label class="checkrow"><input id="f-view-team-hours" type="checkbox" ${u.canViewTeamHours?'checked':''}> Może widzieć czas pracy i wykonane zadania w przypisanych obiektach</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
   }
   return '';
 }
@@ -811,7 +859,7 @@ setTimeout(()=>{
   });
 }
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;render();});
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;selectedFiles=[];fileInput.value='';render();});
   document.getElementById('logout')?.addEventListener('click',()=>state.mode==='cloud'?signOutCloud():demoLogout());
@@ -832,6 +880,9 @@ setTimeout(()=>{
   document.getElementById('add-user')?.addEventListener('click',()=>{state.modal='newUser';render();});
   document.querySelectorAll('[data-edit-location]').forEach(b=>b.onclick=()=>{state.locationId=b.dataset.editLocation;state.modal='editLocation';render();});
   document.querySelectorAll('[data-edit-user]').forEach(b=>b.onclick=()=>{state.userId=b.dataset.editUser;state.modal='editUser';render();});
+  document.querySelectorAll('[data-profile-view]').forEach(b=>b.onclick=()=>{state.profileView=b.dataset.profileView;if(state.profileView==='team')loadTeamMonth();else render();});
+  document.querySelectorAll('[data-team-month]').forEach(b=>b.onclick=()=>{const [y,m]=state.teamMonth.split('-').map(Number);state.teamMonth=new Date(Date.UTC(y,m-1+Number(b.dataset.teamMonth),1)).toISOString().slice(0,7);loadTeamMonth();});
+  document.getElementById('team-worker')?.addEventListener('change',e=>{state.teamWorker=e.target.value;render();});
   document.querySelectorAll('[data-worker-card]').forEach(b=>b.onclick=()=>{state.userId=b.dataset.workerCard;state.workerPeriod='all';state.modal='workerCard';render();});
   document.querySelectorAll('input[name="voucher-kind"]').forEach(b=>b.onchange=()=>{
     const kind=document.querySelector('input[name="voucher-kind"]:checked')?.value;
@@ -1044,8 +1095,8 @@ async function saveLocationFromForm(){
 }
 function addDemoUser(){const name=document.getElementById('f-username').value.trim();if(!name)return toast('Wpisz imię pracownika.');const locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);state.db.users.push({id:uid(),name,role:'worker',locationIds:locs,active:true});logEvent('user',`Dodano pracownika „${name}”`);saveDemoDB();state.modal=null;render();}
 async function saveUserEdit(){
-  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,canAddInspections=document.getElementById('f-add-inspections').checked,canCreateTasks=document.getElementById('f-create-tasks').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
-  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,canAddInspections,canCreateTasks,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals,can_add_inspections:canAddInspections,can_create_tasks:canCreateTasks});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
+  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,canAddInspections=document.getElementById('f-add-inspections').checked,canCreateTasks=document.getElementById('f-create-tasks').checked,canViewTeamHours=document.getElementById('f-view-team-hours').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
+  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,canAddInspections,canCreateTasks,canViewTeamHours,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals,can_add_inspections:canAddInspections,can_create_tasks:canCreateTasks,can_view_team_hours:canViewTeamHours});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
 }
 async function saveCoinAdjustment(){
   const u=state.db.users.find(x=>x.id===state.userId), amount=Math.trunc(Number(document.getElementById('f-coin-amount')?.value||0)), taskId=document.getElementById('f-coin-task')?.value||null, description=document.getElementById('f-coin-desc')?.value.trim();
