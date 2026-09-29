@@ -23,7 +23,7 @@ on:
       - '.github/workflows/build-desktop.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
@@ -48,3 +48,15 @@ jobs:
           name: IMPERIUM-Windows
           path: desktop/out/make/squirrel.windows/x64/*
           if-no-files-found: error
+
+      - name: Publish downloadable Windows installer
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "desktop-${{ github.run_number }}" \
+            desktop/out/make/squirrel.windows/x64/IMPERIUM-Setup.exe \
+            --title "IMPERIUM Windows ${{ github.run_number }}" \
+            --notes "Desktopowa wersja IMPERIUM. Logowanie tym samym kontem co w aplikacji mobilnej." \
+            --latest
