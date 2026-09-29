@@ -73,3 +73,30 @@ begin
 end $$;
 revoke all on function public.salary_add_25(uuid,date),public.salary_set_goal(uuid,date,integer) from public,anon;
 grant execute on function public.salary_add_25(uuid,date),public.salary_set_goal(uuid,date,integer) to authenticated;
+
+-- Assign every 25 zł addition to a source bag; existing entries remain in the overall total.
+alter table public.salary_additions add column if not exists source text not null default 'other';
+do $$ begin
+  if not exists(select 1 from pg_constraint where conrelid='public.salary_additions'::regclass and conname='salary_additions_source_check') then
+    alter table public.salary_additions add constraint salary_additions_source_check
+      check(source in ('tur','terimex','bj','maktronik','other'));
+  end if;
+end $$;
+drop function if exists public.salary_add_25(uuid,date);
+create or replace function public.salary_add_25(p_profile uuid,p_month date,p_source text) returns void
+language plpgsql security definer set search_path = '' as $$
+declare v_pot uuid;
+begin
+  if not public.salary_is_manager() then raise exception 'Brak uprawnień'; end if;
+  if p_profile is null or p_month is null or p_month<>date_trunc('month',p_month)::date
+    or p_source is null or p_source not in ('tur','terimex','bj','maktronik')
+    or not exists(select 1 from public.profiles where id=p_profile and active)
+  then raise exception 'Nieprawidłowy pracownik, miesiąc lub źródło'; end if;
+  insert into public.salary_pots(profile_id,month_start) values(p_profile,p_month)
+    on conflict(profile_id,month_start) do update set goal_zl=public.salary_pots.goal_zl
+    returning id into v_pot;
+  insert into public.salary_additions(pot_id,amount_zl,added_by,source)
+    values(v_pot,25,auth.uid(),p_source);
+end $$;
+revoke all on function public.salary_add_25(uuid,date,text) from public,anon;
+grant execute on function public.salary_add_25(uuid,date,text) to authenticated;

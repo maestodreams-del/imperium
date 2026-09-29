@@ -17,7 +17,7 @@ let bottomNavScrollLeft = 0;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
-  salaryManager:false, salaryMonth:new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), salaryWorkerId:null, salaryPots:[], salaryAdditions:[], salaryLoadedMonth:null, salaryLoading:false, salaryAnimate:false,
+  salaryManager:false, salaryMonth:new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), salaryWorkerId:null, salaryPots:[], salaryAdditions:[], salaryLoadedMonth:null, salaryLoading:false, salaryAnimate:false, salaryFallingSource:null, rentalExpanded:{}, pdfZoom:1,
   demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], rentalRooms: [], rentalDocuments: [], invoiceSellers: [], invoiceDrafts: [], invoiceId: null, invoiceLines: [], vouchers: [], inspectionId: null, rentalId: null, roomId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
 
@@ -479,25 +479,31 @@ function renderSalaryPage(){
     <div class="salary-controls"><label>Miesiąc<input id="salary-month" type="month" value="${esc(state.salaryMonth)}"></label>${isSalaryManager()?`<label>Pracownik<select id="salary-worker">${state.db.users.filter(u=>u.active).map(u=>`<option value="${esc(u.id)}" ${worker?.id===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label>`:''}</div>
     <div class="salary-card"><div class="salary-owner">${esc(worker?.name||'Pracownik')}</div><div class="salary-total">${loading?'…':total.toLocaleString('pl-PL')} <small>zł</small></div><div class="salary-target">${goal?`Cel: ${goal.toLocaleString('pl-PL')} zł · ${pct}%`:'Ustaw cel miesiąca, aby zobaczyć postęp'}</div>
     <div class="salary-track" role="progressbar" aria-label="Postęp skarbonki" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>
-    <div class="salary-pig-wrap ${state.salaryAnimate?'salary-celebrate':''}"><div class="salary-coin">25 zł</div><svg class="salary-pig" viewBox="0 0 250 180" role="img" aria-label="Animowana skarbonka"><defs><linearGradient id="pigGold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe7a5"/><stop offset=".55" stop-color="#dfaa58"/><stop offset="1" stop-color="#9e6d33"/></linearGradient></defs><path d="M48 82Q36 68 27 74Q14 86 31 96" fill="none" stroke="#dba552" stroke-width="9" stroke-linecap="round"/><path d="M59 126Q45 113 44 91Q45 46 108 36Q143 32 167 50L188 35L196 65Q209 75 211 90L231 95L226 124L207 130Q190 148 165 150L157 169L137 169L133 152L93 150L84 169L64 169L67 142Q57 137 59 126Z" fill="url(#pigGold)" stroke="#f9df9e" stroke-width="3"/><ellipse cx="180" cy="91" rx="4" ry="5" fill="#312c2a"/><path d="M104 54h36" stroke="#6b4729" stroke-width="5" stroke-linecap="round"/><circle cx="210" cy="105" r="3" fill="#8f6137"/></svg></div>
-    ${isSalaryManager()?`<div class="salary-admin"><button id="salary-add" class="salary-plus" ${loading?'disabled':''} aria-label="Dodaj 25 zł">+ <b>25 zł</b></button><label>Cel (zł)<input id="salary-goal" type="number" min="0" max="10000000" step="25" value="${goal}"></label><button id="salary-save-goal" class="smallbtn">Zapisz cel</button></div>`:'<p class="salary-private">Widoczne tylko dla Ciebie i właściciela IMPERIUM.</p>'}</div>
-    <div class="salary-history"><h3>Wpłaty w tym miesiącu</h3>${loading?'<p>Ładowanie…</p>':additions.length?additions.map(a=>`<div><span>+25 zł</span><time>${fmtDate(a.created_at)}</time></div>`).join(''):'<p>Brak wpłat w tym miesiącu.</p>'}</div></div></section>`;
+    <div class="salary-bags">${SALARY_SOURCES.map(([source,label])=>{
+      const sum=additions.filter(a=>a.source===source).length*25;
+      return `<button class="salary-bag ${state.salaryFallingSource===source?'salary-bag-falling':''}" data-salary-source="${source}" ${!isSalaryManager()||loading?'disabled':''} aria-label="${isSalaryManager()?`Dodaj 25 zł z ${label}`:`${label}: ${sum} zł`}"><span class="salary-bag-shape">✦</span><strong>${label}</strong><small>${sum.toLocaleString('pl-PL')} zł</small></button>`;
+    }).join('')}</div>
+    <div class="salary-fall ${state.salaryAnimate?'salary-fall-active':''}" style="--bag-offset:${SALARY_SOURCES.findIndex(x=>x[0]===state.salaryFallingSource)-1.5}">25 zł</div><div class="salary-chest ${state.salaryAnimate?'salary-chest-bounce':''}" role="img" aria-label="Skarbonka z łączną sumą"><div class="salary-chest-lid"></div><div class="salary-chest-body"><span>✦ AURELIA ✦</span><b>${total.toLocaleString('pl-PL')} zł</b></div></div>
+    ${isSalaryManager()?`<div class="salary-admin"><label>Cel (zł)<input id="salary-goal" type="number" min="0" max="10000000" step="25" value="${goal}"></label><button id="salary-save-goal" class="smallbtn">Zapisz cel</button></div>`:'<p class="salary-private">Kwoty w workach i wspólnej szkatułce są widoczne tylko dla Ciebie i właściciela.</p>'}</div>
+    <div class="salary-history"><h3>Monety w tym miesiącu</h3>${loading?'<p>Ładowanie…</p>':additions.length?additions.map(a=>`<div><span>${esc(SALARY_SOURCES.find(x=>x[0]===a.source)?.[1]||'Wcześniejsza wpłata')} · +25 zł</span><time>${fmtDate(a.created_at)}</time></div>`).join(''):'<p>Brak monet w tym miesiącu.</p>'}</div></div></section>`;
 }
 function bindSalary(){
   document.getElementById('salary-month')?.addEventListener('change',e=>{if(!/^\d{4}-\d{2}$/.test(e.target.value))return;state.salaryMonth=e.target.value;render();loadSalaryMonth();});
   document.getElementById('salary-worker')?.addEventListener('change',e=>{if(!isSalaryManager())return;state.salaryWorkerId=e.target.value;render();});
-  document.getElementById('salary-add')?.addEventListener('click',async()=>{
-    if(!isSalaryManager())return;
+  document.querySelectorAll('[data-salary-source]').forEach(b=>b.addEventListener('click',async()=>{
+    const source=b.dataset.salarySource;if(!SALARY_SOURCES.some(x=>x[0]===source))return;
+    if(!isSalaryManager()||b.disabled)return;
+    b.disabled=true;
     const worker=salaryWorker(),month=salaryMonthKey();
     await withAction('Dodawanie 25 zł…',async()=>{
       if(state.mode==='demo'){
         let pot=state.db.salaryPots.find(p=>p.profile_id===worker.id&&p.month_start===month);
         if(!pot){pot={id:uid(),profile_id:worker.id,month_start:month,goal_zl:0};state.db.salaryPots.push(pot);}
-        state.db.salaryAdditions.push({id:uid(),pot_id:pot.id,amount_zl:25,created_at:nowISO()});saveDemoDB();
-      }else{await cloudFetch('/rest/v1/rpc/salary_add_25',{method:'POST',body:{p_profile:worker.id,p_month:month}});await loadSalaryMonth({refresh:true});}
-      state.salaryAnimate=true;setTimeout(()=>{state.salaryAnimate=false;if(state.tab==='salary')render();},1000);
+        state.db.salaryAdditions.push({id:uid(),pot_id:pot.id,amount_zl:25,source,created_at:nowISO()});saveDemoDB();
+      }else{await cloudFetch('/rest/v1/rpc/salary_add_25',{method:'POST',body:{p_profile:worker.id,p_month:month,p_source:source}});await loadSalaryMonth({refresh:true});}
+      state.salaryAnimate=true;state.salaryFallingSource=source;setTimeout(()=>{state.salaryAnimate=false;state.salaryFallingSource=null;if(state.tab==='salary')render();},1000);
     });
-  });
+  }));
   document.getElementById('salary-save-goal')?.addEventListener('click',async()=>{
     if(!isSalaryManager())return;
     const worker=salaryWorker(),month=salaryMonthKey(),goal=Number(document.getElementById('salary-goal')?.value);
@@ -647,6 +653,7 @@ const rentMoney=n=>new Intl.NumberFormat('pl-PL',{style:'currency',currency:'PLN
 const rentalPaymentLabel=s=>({reliable:'Rzetelny płatnik',monitor:'Pod kontrolą',problematic:'Problematyczny'}[s]||'Nie oznaczono');
 const rentalActionLabel=kind=>({cesja:'Cesja',aneks:'Aneks',wypowiedzenie:'Wypowiedzenie'}[kind]||kind);
 function rentalTotals(r){return {net:r.areaSqm*r.priceSqmNet+r.parkingNet+r.internetNet,gross:r.areaSqm*r.priceSqmGross+r.parkingGross+r.internetGross};}
+const SALARY_SOURCES=[['tur','Tur'],['terimex','Terimex'],['bj','BJ'],['maktronik','Maktronik']];
 const HOTEL_FLOORS={'Smolańska 3':['Piwnica','Parter','1 piętro','2 piętro','3 piętro','4 piętro'],'Smolańska 4':['Piwnica','Parter','1 piętro','2 piętro','3 piętro'],Parking:['Parking']};
 function isHotelTur(id){return /hotel\s*tur/i.test(getLoc(id)?.name||'');}
 function rentalRoomLabel(room){return room?`${room.building} / ${room.floor} / ${room.number}`:'';}
@@ -662,9 +669,23 @@ function rentalCard(r){
   <div class="rental-actions"><div class="subheading">Umowa PDF</div>${docs.map(d=>`<div class="rental-action"><span>📄 ${esc(d.name)} • ${bytes(d.size)}</span><button class="smallbtn" data-view-rental-pdf="${esc(d.id)}">Otwórz</button></div>`).join('')||'<small class="subtle">Brak pliku PDF.</small>'}<button class="smallbtn" data-add-rental-pdf="${esc(r.id)}">+ Dodaj PDF</button>${isAdmin()?`<button class="smallbtn gold" data-invoice-rental="${esc(r.id)}">+ Faktura z umowy</button>`:''}</div>
   <div class="rental-actions"><div class="subheading">Planowane dokumenty</div>${state.rentalActions.filter(a=>a.rentalId===r.id).map(a=>`<div class="rental-action"><span>${esc(rentalActionLabel(a.kind))} · ${esc(a.dueOn)}${a.completedAt?' · GOTOWE':''}</span>${!a.completedAt?`<button class="smallbtn" data-edit-rental-action="${esc(a.id)}">Edytuj</button>`:''}</div>`).join('')||'<small class="subtle">Brak zaplanowanych dokumentów.</small>'}<button class="smallbtn gold" data-add-rental-action="${esc(r.id)}">+ Cesja / aneks / wypowiedzenie</button></div></article>`;
 }
+function rentalDisclosure(key,title,inner,klass=''){
+  return `<details class="rental-tree ${klass}" data-rental-tree="${esc(key)}" ${state.rentalExpanded[key]?'open':''}><summary>${esc(title)}</summary><div class="rental-tree-content">${inner}</div></details>`;
+}
 function renderHotelRooms(locId,rentals){
   const rooms=state.rentalRooms.filter(x=>x.locationId===locId);
-  return `<div class="hotel-register">${Object.entries(HOTEL_FLOORS).map(([building,floors])=>`<section class="hotel-building"><h3>${esc(building)}</h3>${floors.map(floor=>{const list=rooms.filter(x=>x.building===building&&x.floor===floor);return `<div class="hotel-floor"><div class="hotel-floor-head"><b>${esc(floor)}</b><button class="smallbtn" data-add-room="${esc(building)}" data-floor="${esc(floor)}">+ Pomieszczenie</button></div>${list.map(room=>`<div class="hotel-room"><div><b>${esc(room.number)}</b> · ${esc(room.areaSqm)} m²<br><small>${room.hasMeter?`Licznik prądu: ${room.meterReading==null?'brak odczytu':esc(room.meterReading)} ${room.meterReadOn?`(${esc(room.meterReadOn)})`:''}`:'Bez licznika prądu'}</small></div><div><button class="smallbtn" data-edit-room="${esc(room.id)}">Edytuj</button> <button class="smallbtn" data-room-rental="${esc(room.id)}">+ Umowa</button></div></div>${rentals.filter(r=>r.roomId===room.id).map(rentalCard).join('')}`).join('')||'<small class="subtle">Brak pomieszczeń.</small>'}</div>`}).join('')}</section>`).join('')}</div>`;
+  return `<div class="hotel-register">${Object.entries(HOTEL_FLOORS).map(([building,floors])=>{
+    const content=floors.map(floor=>{
+      const list=rooms.filter(x=>x.building===building&&x.floor===floor),key=`floor:${locId}:${building}:${floor}`;
+      const rows=list.map(room=>{
+        const contracts=rentals.filter(r=>r.roomId===room.id);
+        return rentalDisclosure(`room:${room.id}`,`${room.number} · ${room.areaSqm} m² · ${contracts.length} umów`,
+          `<div class="hotel-room"><small>${room.hasMeter?`Licznik prądu: ${room.meterReading==null?'brak odczytu':esc(room.meterReading)} ${room.meterReadOn?`(${esc(room.meterReadOn)})`:''}`:'Bez licznika prądu'}</small><div><button class="smallbtn" data-edit-room="${esc(room.id)}">Edytuj</button> <button class="smallbtn" data-room-rental="${esc(room.id)}">+ Umowa</button></div></div>${contracts.map(rentalCard).join('')||'<small class="subtle">Brak umów.</small>'}`,'rental-room-node');
+      }).join('')||'<small class="subtle">Brak pomieszczeń.</small>';
+      return rentalDisclosure(key,`${floor} · ${list.length} pomieszczeń`,`${rows}<button class="smallbtn" data-add-room="${esc(building)}" data-floor="${esc(floor)}">+ Pomieszczenie</button>`,'rental-floor-node');
+    }).join('');
+    return rentalDisclosure(`building:${locId}:${building}`,building,content,'rental-building-node');
+  }).join('')}</div>`;
 }
 function invoiceDraftTotals(x){try{return window.ImperiumInvoice.calculate(x.lines);}catch(e){return null;}}
 function renderInvoicesPage(){
@@ -677,14 +698,14 @@ function renderInvoicesPage(){
 function renderRentalsPage(){
   if(!canManageRentals())return '';
   const locs=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
-  const locId=locs.some(l=>l.id===state.rentalLocationId)?state.rentalLocationId:locs[0]?.id;
+  const locId=locs.some(l=>l.id===state.rentalLocationId)?state.rentalLocationId:null;
   state.rentalLocationId=locId;
   const rentals=state.rentals.filter(r=>r.locationId===locId);
   return `<div class="toolbar"><div><div class="eyebrow">Ewidencja najmu</div><h2 class="section-title">Umowy najmu</h2></div><button class="goldbtn" id="add-rental" ${locId?'':'disabled'}>+ Umowa najmu</button></div>
   <div class="rental-location-tabs">${locs.map(l=>`<button class="chip ${l.id===locId?'active':''}" data-rental-location="${esc(l.id)}">${esc(l.name)}</button>`).join('')}</div>
-  ${isHotelTur(locId)?renderHotelRooms(locId,rentals):''}
-  <div class="subheading">${isHotelTur(locId)?'Umowy bez przypisanego pomieszczenia':'Umowy — '+esc(getLoc(locId)?.name||'wybierz obiekt')}</div>
-  <div class="rental-list">${rentals.filter(r=>!isHotelTur(locId)||!r.roomId||!state.rentalRooms.some(x=>x.id===r.roomId)).map(rentalCard).join('')||'<div class="empty">Brak umów w tym widoku.</div>'}</div>`;
+  ${locId&&isHotelTur(locId)?renderHotelRooms(locId,rentals):''}
+  ${locId?`<div class="subheading">${isHotelTur(locId)?'Umowy bez przypisanego pomieszczenia':'Umowy — '+esc(getLoc(locId)?.name||'wybierz obiekt')}</div>
+  <div class="rental-list">${rentals.filter(r=>!isHotelTur(locId)||!r.roomId||!state.rentalRooms.some(x=>x.id===r.roomId)).map(rentalCard).join('')||'<div class="empty">Brak umów w tym widoku.</div>'}</div>`:'<div class="empty">Wybierz obiekt, aby zobaczyć piętra i umowy.</div>'}`;
 }
 function renderLocationsPage(){
   const visible=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
@@ -1145,6 +1166,7 @@ setTimeout(()=>{
   document.getElementById('add-location')?.addEventListener('click',()=>{state.modal='newLocation';render();});
   document.getElementById('add-inspection')?.addEventListener('click',()=>{state.inspectionId=null;state.modal='newInspection';render();});
   document.querySelectorAll('[data-rental-location]').forEach(b=>b.onclick=()=>{state.rentalLocationId=b.dataset.rentalLocation;render();});
+  document.querySelectorAll('[data-rental-tree]').forEach(el=>el.addEventListener('toggle',()=>{state.rentalExpanded[el.dataset.rentalTree]=el.open;}));
   document.getElementById('add-rental')?.addEventListener('click',()=>{state.rentalId=null;state.roomId=null;state.modal='newRental';render();});
   document.getElementById('add-invoice-seller')?.addEventListener('click',()=>{state.invoiceId=null;state.modal='invoiceSeller';render();});
   document.querySelectorAll('[data-edit-invoice-seller]').forEach(b=>b.onclick=()=>{state.invoiceId=b.dataset.editInvoiceSeller;state.modal='invoiceSeller';render();});
@@ -1484,21 +1506,33 @@ async function loadRentalPdfPreview(){
     if(state.mode==='demo'){if(!doc.preview)throw new Error('Plik niedostępny w trybie demo.');url=doc.preview;}
     else{const response=await cloudFetch(`/storage/v1/object/authenticated/rental-documents/${encodeStoragePath(doc.path)}`,{raw:true});url=URL.createObjectURL(await response.blob());state.pdfUrl=url;}
     if(state.modal!=='rentalPdf'||state.pdfId!==doc.id){if(state.mode!=='demo')URL.revokeObjectURL(url);return;}
-    box.innerHTML=`<div class="pdf-pages">Ładowanie stron…</div><div class="modal-actions"><a class="smallbtn" href="${esc(url)}" download="${esc(doc.name)}">Pobierz PDF</a></div>`;
+    box.innerHTML=`<div class="rental-pdf-toolbar"><button class="smallbtn" id="rental-pdf-minus" aria-label="Pomniejsz">−</button><span id="rental-pdf-zoom">100%</span><button class="smallbtn" id="rental-pdf-plus" aria-label="Powiększ">+</button><a class="smallbtn" href="${esc(url)}" target="_blank" rel="noopener">Otwórz PDF</a><a class="smallbtn" href="${esc(url)}" download="${esc(doc.name)}">Pobierz</a></div><div class="pdf-pages rental-pdf-pages">Ładowanie stron…</div>`;
     const pdfjs=await import('./pdf.min.mjs');
     pdfjs.GlobalWorkerOptions.workerSrc='./pdf.worker.min.mjs';
     const pdf=await pdfjs.getDocument(url).promise,pages=box.querySelector('.pdf-pages');
     if(state.modal!=='rentalPdf'||!pages)return;
-    pages.textContent='';
-    for(let n=1;n<=pdf.numPages;n++){
-      if(state.modal!=='rentalPdf'||state.pdfId!==doc.id)break;
-      const page=await pdf.getPage(n),base=page.getViewport({scale:1}),scale=Math.min(2,Math.max(.5,(pages.clientWidth-12)/base.width)),view=page.getViewport({scale});
-      const canvas=document.createElement('canvas');canvas.width=Math.ceil(view.width);canvas.height=Math.ceil(view.height);canvas.setAttribute('aria-label',`Strona ${n} z ${pdf.numPages}`);pages.appendChild(canvas);
-      await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise;
+    state.pdfZoom=1;let generation=0;
+    async function draw(){
+      const token=++generation,zoom=state.pdfZoom;
+      document.getElementById('rental-pdf-zoom').textContent=`${Math.round(zoom*100)}%`;
+      pages.replaceChildren();
+      const ratio=Math.min(2,window.devicePixelRatio||1);
+      for(let n=1;n<=pdf.numPages;n++){
+        if(token!==generation||state.modal!=='rentalPdf'||state.pdfId!==doc.id)return;
+        const page=await pdf.getPage(n),base=page.getViewport({scale:1});
+        const fit=Math.max(.4,(pages.clientWidth-22)/base.width),view=page.getViewport({scale:fit*zoom});
+        const canvas=document.createElement('canvas');canvas.width=Math.ceil(view.width*ratio);canvas.height=Math.ceil(view.height*ratio);
+        canvas.style.width=`${Math.ceil(view.width)}px`;canvas.style.height=`${Math.ceil(view.height)}px`;
+        canvas.setAttribute('aria-label',`Strona ${n} z ${pdf.numPages}`);pages.appendChild(canvas);
+        await page.render({canvasContext:canvas.getContext('2d'),viewport:page.getViewport({scale:fit*zoom*ratio})}).promise;
+      }
     }
+    box.querySelector('#rental-pdf-minus').onclick=()=>{state.pdfZoom=Math.max(.75,Math.round((state.pdfZoom-.25)*100)/100);draw().catch(e=>toast(e.message));};
+    box.querySelector('#rental-pdf-plus').onclick=()=>{state.pdfZoom=Math.min(4,Math.round((state.pdfZoom+.25)*100)/100);draw().catch(e=>toast(e.message));};
+    await draw();
   }catch(e){
-    if(state.modal==='rentalPdf'&&state.pdfUrl){box.innerHTML=`<div class="status-note">Podgląd stron jest niedostępny w tej przeglądarce. Możesz pobrać dokument.</div><div class="modal-actions"><a class="smallbtn" href="${esc(state.pdfUrl)}" download="${esc(doc.name)}">Pobierz PDF</a></div>`;}
-    else box.textContent=`Nie udało się otworzyć PDF: ${e.message}`;
+    if(state.modal==='rentalPdf'&&state.pdfUrl){box.innerHTML=`<div class="status-note">Podgląd stron jest niedostępny. Otwórz lub pobierz dokument.</div><div class="modal-actions"><a class="smallbtn" href="${esc(state.pdfUrl)}" target="_blank" rel="noopener">Otwórz PDF</a><a class="smallbtn" href="${esc(state.pdfUrl)}" download="${esc(doc.name)}">Pobierz PDF</a></div>`;}
+    else if(box)box.textContent=`Nie udało się otworzyć PDF: ${e.message}`;
   }
 }
 function updateRentalFormTotal(){
