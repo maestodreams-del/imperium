@@ -1475,3 +1475,5 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 @keyframes missionBlink{50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.aureus-shell .bottomnav .navitem.important-soon i::after{animation:none}}
 .nip-lookup{margin-top:8px;align-self:flex-start}.nip-lookup-result{display:block;margin-top:6px;line-height:1.4}.rental-registered{margin:5px 0;color:var(--text-muted,#9ba6b5)}
+
+.pdf-content:has(.pdf-pages){display:flex;flex-direction:column}.pdf-content:has(.pdf-pages) .pdf-pages{flex:1;min-height:0;height:auto}.pdf-content:has(.pdf-pages)>.modal-actions{flex:none;margin:8px 0 0}

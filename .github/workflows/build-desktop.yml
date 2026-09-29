@@ -18,8 +18,15 @@ on:
       - 'manifest.webmanifest'
       - 'sw.js'
       - 'invoice-format.js'
+      - 'invoice-pdf.js'
+      - 'pdf-lib.min.js'
+      - 'fontkit.umd.min.js'
+      - 'invoice-font-data.js'
       - 'pdf.min.mjs'
       - 'pdf.worker.min.mjs'
+      - 'invoice-font-LICENSE.txt'
+      - 'pdf-lib-LICENSE.md'
+      - 'fontkit-LICENSE.txt'
       - '.github/workflows/build-desktop.yml'
 
 permissions:
