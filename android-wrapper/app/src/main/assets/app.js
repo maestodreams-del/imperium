@@ -33,7 +33,7 @@ function seed(){
     version:2,
     users:[
       {id:'u-admin',name:'Administrator',role:'admin',locationIds:['l1','l2','l3','l4','l5','l6'],active:true},
-      {id:'u-zenon',name:'Zenon',role:'worker',locationIds:['l3','l4'],active:true},
+      {id:'u-zenon',name:'Zenon',role:'worker',canManageRentals:true,locationIds:['l3','l4'],active:true},
       {id:'u-mikolaj',name:'Mikołaj',role:'worker',locationIds:['l1','l2','l5','l6'],active:true},
       {id:'u-nikolai',name:'Nikolai',role:'worker',locationIds:['l1','l2','l4'],active:true}
     ],
@@ -112,6 +112,7 @@ function currentUser(){
 function getUser(id){ return state.db?.users?.find(u=>u.id===id); }
 function getLoc(id){ return state.db?.locations?.find(l=>l.id===id); }
 function isAdmin(){ return currentUser()?.role==='admin'; }
+function canManageRentals(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canManageRentals); }
 function taskStatusLabel(s){ return ({open:'Nowe',in_progress:'W toku',review:'Do akceptacji',done:'Zakończone'}[s]||s); }
 function priorityLabel(p){ return ({normal:'Normalne',high:'Wysoki',urgent:'Pilne'}[p]||p); }
 function sanctionLabel(s){ return ({none:'Brak',note:'Uwaga',warning:'Ostrzeżenie',reprimand:'Upomnienie',other:'Inna sankcja'}[s]||s||'Brak'); }
@@ -296,7 +297,7 @@ async function loadCloudDB({silent=false}={}){
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
     const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts]=await Promise.all([
-      pgGet('profiles?select=id,full_name,role,active,created_at&order=created_at.asc'),
+      pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
       pgGet('tasks?select=*&order=created_at.desc'),
@@ -316,7 +317,7 @@ async function loadCloudDB({silent=false}={}){
     state.rentals=(rentals||[]).map(mapRental);
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
     state.shifts=(shifts||[]).map(s=>({id:s.id,userId:s.profile_id,locationId:s.location_id,startsAt:s.starts_at,endsAt:s.ends_at}));
-    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
+    state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
     state.lastEventAt=newest; state.cloudError=''; state.loading=false;
@@ -409,7 +410,7 @@ function render(){
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
   if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];}
-  if(!isAdmin()&&state.tab==='rentals')state.tab='tasks';
+  if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app aureus-shell">
   <header class="topbar"><div class="topbar-inner">
@@ -417,7 +418,7 @@ function render(){
     <div class="top-actions"><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${u.role==='admin'?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
   </div></header>
   <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${isAdmin()?nav('rentals','Najem'):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('settings','System')}</div></nav>
   ${renderModal()}</div>`;
   bind();
 }
@@ -557,8 +558,8 @@ const rentMoney=n=>new Intl.NumberFormat('pl-PL',{style:'currency',currency:'PLN
 const rentalPaymentLabel=s=>({reliable:'Rzetelny płatnik',monitor:'Pod kontrolą',problematic:'Problematyczny'}[s]||'Nie oznaczono');
 function rentalTotals(r){return {net:r.areaSqm*r.priceSqmNet+r.parkingNet+r.internetNet,gross:r.areaSqm*r.priceSqmGross+r.parkingGross+r.internetGross};}
 function renderRentalsPage(){
-  if(!isAdmin())return '';
-  const locs=state.db.locations;
+  if(!canManageRentals())return '';
+  const locs=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
   const locId=locs.some(l=>l.id===state.rentalLocationId)?state.rentalLocationId:locs[0]?.id;
   state.rentalLocationId=locId;
   const rentals=state.rentals.filter(r=>r.locationId===locId);
@@ -731,12 +732,12 @@ function renderModal(){
     const edit=state.modal==='editRental',r=edit?state.rentals.find(x=>x.id===state.rentalId):null;
     if(edit&&!r)return '';
     return `<div class="modal-bg"><div class="modal rental-modal"><h2>${edit?'Edytuj umowę najmu':'Nowa umowa najmu'}</h2>
-    <div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-rental-location">${state.db.locations.map(l=>`<option value="${esc(l.id)}" ${l.id===(r?.locationId||state.rentalLocationId)?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Nazwa kontrahenta / najemcy</label><input id="f-rental-contractor" maxlength="160" value="${esc(r?.contractor||'')}" required></div><div class="field"><label>NIP</label><input id="f-rental-nip" maxlength="24" value="${esc(r?.nip||'')}"></div><div class="field"><label>Osoba kontaktowa</label><input id="f-rental-contact" maxlength="120" value="${esc(r?.contactPerson||'')}"></div><div class="field"><label>Telefon</label><input id="f-rental-phone" type="tel" maxlength="50" value="${esc(r?.phone||'')}"></div><div class="field"><label>E-mail</label><input id="f-rental-email" type="email" maxlength="254" value="${esc(r?.email||'')}"></div><div class="field"><label>Początek umowy</label><input id="f-rental-start" type="date" value="${esc(r?.startsOn||'')}"></div><div class="field"><label>Koniec umowy</label><input id="f-rental-end" type="date" value="${esc(r?.endsOn||'')}" ${r?.indefinite?'disabled':''}></div></div>
+    <div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-rental-location">${(isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id))).map(l=>`<option value="${esc(l.id)}" ${l.id===(r?.locationId||state.rentalLocationId)?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Nazwa kontrahenta / najemcy</label><input id="f-rental-contractor" maxlength="160" value="${esc(r?.contractor||'')}" required></div><div class="field"><label>NIP</label><input id="f-rental-nip" maxlength="24" value="${esc(r?.nip||'')}"></div><div class="field"><label>Osoba kontaktowa</label><input id="f-rental-contact" maxlength="120" value="${esc(r?.contactPerson||'')}"></div><div class="field"><label>Telefon</label><input id="f-rental-phone" type="tel" maxlength="50" value="${esc(r?.phone||'')}"></div><div class="field"><label>E-mail</label><input id="f-rental-email" type="email" maxlength="254" value="${esc(r?.email||'')}"></div><div class="field"><label>Początek umowy</label><input id="f-rental-start" type="date" value="${esc(r?.startsOn||'')}"></div><div class="field"><label>Koniec umowy</label><input id="f-rental-end" type="date" value="${esc(r?.endsOn||'')}" ${r?.indefinite?'disabled':''}></div></div>
     <div class="rental-form-section">Wynajmowany lokal</div><div class="formgrid"><div class="field"><label>Adres lokalu</label><input id="f-rental-address" maxlength="300" value="${esc(r?.premisesAddress||'')}" placeholder="Ulica, numer budynku, miejscowość"></div><div class="field"><label>Numer lokalu / pomieszczenia</label><input id="f-rental-room" maxlength="80" value="${esc(r?.premisesNumber||'')}" placeholder="Np. 12A"></div><div class="field"><label>Status płatnika</label><select id="f-rental-status"><option value="" ${!r?.paymentStatus?'selected':''}>Wybierz status</option><option value="reliable" ${r?.paymentStatus==='reliable'?'selected':''}>Rzetelny płatnik</option><option value="monitor" ${r?.paymentStatus==='monitor'?'selected':''}>Pod kontrolą</option><option value="problematic" ${r?.paymentStatus==='problematic'?'selected':''}>Problematyczny</option></select></div></div>
     <label class="checkrow"><input id="f-rental-indefinite" type="checkbox" ${r?.indefinite?'checked':''}> Umowa na czas nieokreślony</label>
     <div class="rental-form-section">Powierzchnia i czynsz miesięczny</div><div class="formgrid"><div class="field"><label>Powierzchnia (m²)</label><input id="f-rental-area" type="number" min="0.01" step="0.01" value="${r?.areaSqm||''}"></div><div class="field"><label>Cena za m² netto (zł)</label><input id="f-rental-sqm-net" type="number" min="0" step="0.01" value="${r?.priceSqmNet??''}"></div><div class="field"><label>Cena za m² brutto (zł)</label><input id="f-rental-sqm-gross" type="number" min="0" step="0.01" value="${r?.priceSqmGross??''}"></div></div>
     <div class="rental-form-section">Dodatki miesięczne</div><div class="formgrid"><div class="field"><label>Parking netto (zł)</label><input id="f-rental-parking-net" type="number" min="0" step="0.01" value="${r?.parkingNet??0}"></div><div class="field"><label>Parking brutto (zł)</label><input id="f-rental-parking-gross" type="number" min="0" step="0.01" value="${r?.parkingGross??0}"></div><div class="field"><label>Internet netto (zł)</label><input id="f-rental-internet-net" type="number" min="0" step="0.01" value="${r?.internetNet??0}"></div><div class="field"><label>Internet brutto (zł)</label><input id="f-rental-internet-gross" type="number" min="0" step="0.01" value="${r?.internetGross??0}"></div></div>
-    <div class="rental-live-total" id="rental-live-total"></div><div class="modal-actions">${edit?'<button class="dangerbtn" id="delete-rental">Usuń umowę</button>':''}${close}<button class="goldbtn" id="save-rental">Zapisz</button></div></div></div>`;
+    <div class="rental-live-total" id="rental-live-total"></div><div class="modal-actions">${edit&&isAdmin()?'<button class="dangerbtn" id="delete-rental">Usuń umowę</button>':''}${close}<button class="goldbtn" id="save-rental">Zapisz</button></div></div></div>`;
   }
   if(state.modal==='newInspection'||state.modal==='editInspection'){
     const edit=state.modal==='editInspection',i=edit?(state.inspections||[]).find(x=>x.id===state.inspectionId):null;
@@ -762,7 +763,7 @@ function renderModal(){
   if(state.modal==='newUser')return `<div class="modal-bg"><div class="modal"><h2>Nowy pracownik demo</h2><div class="field"><label>Imię / nazwa</label><input id="f-username"></div><div class="field"><label>Obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}"> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user">Dodaj</button></div></div></div>`;
   if(state.modal==='editUser'){
     const u=state.db.users.find(x=>x.id===state.userId);
-    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
+    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
   }
   return '';
 }
@@ -963,7 +964,7 @@ function updateRentalFormTotal(){
   box.innerHTML=`Suma miesięczna: <b>${rentMoney(net)} netto</b> / <b>${rentMoney(gross)} brutto</b>`;
 }
 async function saveRental(){
-  if(!isAdmin())return;
+  if(!canManageRentals())return;
   const value={locationId:document.getElementById('f-rental-location').value,contractor:document.getElementById('f-rental-contractor').value.trim(),nip:document.getElementById('f-rental-nip').value.trim(),contactPerson:document.getElementById('f-rental-contact').value.trim(),phone:document.getElementById('f-rental-phone').value.trim(),email:document.getElementById('f-rental-email').value.trim(),premisesAddress:document.getElementById('f-rental-address').value.trim(),premisesNumber:document.getElementById('f-rental-room').value.trim(),paymentStatus:document.getElementById('f-rental-status').value||null,startsOn:document.getElementById('f-rental-start').value,indefinite:document.getElementById('f-rental-indefinite').checked,endsOn:document.getElementById('f-rental-end').value||null,areaSqm:rentalNumber('f-rental-area'),priceSqmNet:rentalNumber('f-rental-sqm-net'),priceSqmGross:rentalNumber('f-rental-sqm-gross'),parkingNet:rentalNumber('f-rental-parking-net'),parkingGross:rentalNumber('f-rental-parking-gross'),internetNet:rentalNumber('f-rental-internet-net'),internetGross:rentalNumber('f-rental-internet-gross')};
   if(!value.contractor||!value.locationId||!value.startsOn||value.areaSqm<=0)return toast('Wpisz kontrahenta, obiekt, początek umowy i powierzchnię.');
   if(!value.indefinite&&!value.endsOn)return toast('Wybierz koniec umowy albo czas nieokreślony.');
@@ -1034,8 +1035,8 @@ async function saveLocationFromForm(){
 }
 function addDemoUser(){const name=document.getElementById('f-username').value.trim();if(!name)return toast('Wpisz imię pracownika.');const locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);state.db.users.push({id:uid(),name,role:'worker',locationIds:locs,active:true});logEvent('user',`Dodano pracownika „${name}”`);saveDemoDB();state.modal=null;render();}
 async function saveUserEdit(){
-  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
-  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
+  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
+  await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
 }
 async function saveCoinAdjustment(){
   const u=state.db.users.find(x=>x.id===state.userId), amount=Math.trunc(Number(document.getElementById('f-coin-amount')?.value||0)), taskId=document.getElementById('f-coin-task')?.value||null, description=document.getElementById('f-coin-desc')?.value.trim();
