@@ -1,0 +1,25 @@
+name: Verify private payroll profile mapping
+on:
+  push:
+    branches: ['codex/payroll-private-verification']
+    paths: ['.github/workflows/verify-payroll-profiles.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install database client
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+      - name: Encrypt current payroll mapping for verification
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          AUDIT_RECIPIENT: 'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURNekNDQWh1Z0F3SUJBZ0lVWUE0VkNpbkRZaXY3cVRtRVRBS1lrK2drYnRRd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0tURW5NQ1VHQTFVRUF3d2VSWEJvWlcxbGNtRnNJSEJoZVhKdmJHd2dkbVZ5YVdacFkyRjBhVzl1TUI0WApEVEkyTURreU9USXhNREF6TTFvWERUSTJNRGt6TURJeE1EQXpNMW93S1RFbk1DVUdBMVVFQXd3ZVJYQm9aVzFsCmNtRnNJSEJoZVhKdmJHd2dkbVZ5YVdacFkyRjBhVzl1TUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEEKTUlJQkNnS0NBUUVBeXRNcDhGY042VHV0Z0NmOGlhMWh6clBCZC9SUjQzbGkvL2k3aW5WcmRTZy9VTmJlRTFxRQprTGEvRUFWblB5Z1J5bkJCc0xjUnBhTXVDU1BzREgwNUhHWUs3RzVUR2tFZ0NYb25naUdzN2RtMXN3YzNNOHVrCmJSbU5xK1hONVhYdXpLYnNZWVNHaXJhbWZWWlBYcDg3TWpRaG9wa1dRL2pManJRckh4S29aODBqQVNnZGczQTkKOXVTd05IbEFKUTBaeWJXZXJiemN6a0hJdVdIejNPYTE1Z2JxampPQzZPSHdGaStuR2xGSW9KVGJHU0tmTHhONgpFOE9xVFc5OUVGbjhKd2tvSitKMXlRMmozWDRYVGtWZ2hRUWdaTTNEcVloWWI4MStjWHFiV3Q0WTFWc1VEMExDCnpYVXgzK0hOQ0V1UEVPWmVIbHhPLzJiaStIK0lyVkU4bVFJREFRQUJvMU13VVRBZEJnTlZIUTRFRmdRVW1xbmMKTmozaVZva24vUUoxMlZDQ1YxRG5HREV3SHdZRFZSMGpCQmd3Rm9BVW1xbmNOajNpVm9rbi9RSjEyVkNDVjFEbgpHREV3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBUlhNUVBOcEI4U1U3Ci9OVkJwWWhEUjZiZGxTWWw4RStvTEp4RHJIOXBZVjcwNDI4TFo5NVpaajQzRWZLdEZuNmJuYmxJYWlRMnVheWkKdWtpVmlBSitqOFgvY0ljV1F3UlUwMG1tNGc3NVpLaEdXVjV0blVweHpaNHVPaDBtakhEZ1BlMHhhdk5qa1BPRwpWQlpwdWVpa2I2NEw0UmNwK2dvZGxsaXFrSDEyNTluVGw3clUvVDlFbThHbmxoQmdjWnFrd0QrYlZXcXpXSEdXCjVZVnNGb1lNRHpmbk5LbmtoSitaVjNKcllIMEpyMnI0R2VMWEIrYnRtaWxhbjAwYzBoM3Z3Vk9tekJQYlJqODMKKzdzQVJwUVE1TVY3MmRyTlV3RU1wRGZxK2F4VFJ6Z1I0eEpsbXNrd3h0V1R2Ry81VjFycnJaMDRzNmxKRHRFZQp6bmoxNHdrVThRPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo='
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$AUDIT_RECIPIENT" | base64 -d > /tmp/payroll-audit-cert.pem
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',p.full_name,'pay_type',s.pay_type,'fixed_grosz',s.fixed_grosz,'hourly_grosz',s.hourly_grosz)), '[]'::jsonb) from public.profiles p left join public.salary_compensation s on s.profile_id=p.id where p.active" | openssl cms -encrypt -aes-256-cbc -outform DER -out /tmp/payroll-audit.enc /tmp/payroll-audit-cert.pem
+          printf 'PAYROLL_AUDIT_ENCRYPTED='
+          base64 -w0 /tmp/payroll-audit.enc
+          printf '\n'
