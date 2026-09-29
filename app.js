@@ -16,7 +16,7 @@ let pollTimer = null;
 let state = {
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
-  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], vouchers: [], inspectionId: null, rentalId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
+  demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], rentalRooms: [], rentalDocuments: [], vouchers: [], inspectionId: null, rentalId: null, roomId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
 
 const nowISO = () => new Date().toISOString();
@@ -61,7 +61,7 @@ function seed(){
     attendance:[],
     shifts:[],
     inspections:[],
-    rentals:[],rentalActions:[],importantAlerts:[],
+    rentals:[],rentalRooms:[],rentalDocuments:[],rentalActions:[],importantAlerts:[],
     events:[
       {id:uid(),type:'system',text:'IMPERIUM uruchomione',userId:'u-admin',taskId:null,createdAt:new Date(t-12000000).toISOString()},
       {id:uid(),type:'claim',text:'Mikołaj przejął zadanie „Odczyt liczników”',userId:'u-mikolaj',taskId:'t2',createdAt:new Date(t-1600000).toISOString()},
@@ -77,7 +77,7 @@ function loadDemoDB(){
       x.disciplinaryRecords ||= [];
       x.coinTransactions ||= [];
       x.inspections ||= [];
-      x.rentals ||= [];x.rentalActions ||= [];x.importantAlerts ||= [];x.importantProgress ||= {};
+      x.rentals ||= [];x.rentalRooms ||= [];x.rentalDocuments ||= [];x.rentalActions ||= [];x.importantAlerts ||= [];x.importantProgress ||= {};
       x.vouchers ||= [];
       x.shifts ||= [];
       (x.tasks||[]).forEach(t=>{ if(t.reworkCount==null)t.reworkCount=0; if(t.completedAt===undefined)t.completedAt=null; if(t.rewardCoins==null)t.rewardCoins=0; if(t.penaltyCoins==null)t.penaltyCoins=0; });
@@ -296,13 +296,13 @@ function mapTaskRow(t,comments,atts){
   return {id:t.id,title:t.title,description:t.description||'',notes:t.notes||'',sanctionType:t.sanction_type||'none',sanctionText:t.sanction_text||'',disciplinaryNote:t.disciplinary_note||'',rewardCoins:Number(t.reward_coins||0),penaltyCoins:Number(t.penalty_coins||0),locationId:t.location_id,priority:t.priority,scheduledStart:t.scheduled_start,scheduledEnd:t.scheduled_end,assignedTo:t.assigned_to,groupId:t.assignment_group_id,status:t.status,durationMin:t.duration_min,createdAt:t.created_at,createdBy:t.created_by,claimedBy:t.claimed_by,claimedAt:t.claimed_at,deadlineAt:t.deadline_at,completedAt:t.completed_at,reworkCount:Number(t.rework_count||0),report:t.report_text?{text:t.report_text,submittedAt:t.report_submitted_at,attachments:reportAtts}:null,comments:comments.filter(c=>c.task_id===t.id).map(c=>({id:c.id,userId:c.author_id,text:c.body,createdAt:c.created_at})),attachments:taskAtts};
 }
 function mapAtt(a){return {id:a.id,name:a.file_name,size:Number(a.size_bytes||0),type:a.mime_type||'application/octet-stream',path:a.storage_path,kind:a.kind,uploadedBy:a.uploaded_by,createdAt:a.created_at};}
-function mapRental(r){return {id:r.id,locationId:r.location_id,contractor:r.contractor,nip:r.nip||'',contactPerson:r.contact_person||'',phone:r.phone||'',email:r.email||'',premisesAddress:r.premises_address||'',premisesNumber:r.premises_number||'',paymentStatus:r.payment_status||'',startsOn:r.starts_on,endsOn:r.ends_on,indefinite:r.indefinite,areaSqm:Number(r.area_sqm),priceSqmNet:Number(r.price_sqm_net),priceSqmGross:Number(r.price_sqm_gross),parkingNet:Number(r.parking_net),parkingGross:Number(r.parking_gross),internetNet:Number(r.internet_net),internetGross:Number(r.internet_gross)};}
+function mapRental(r){return {id:r.id,locationId:r.location_id,roomId:r.room_id||null,contractor:r.contractor,nip:r.nip||'',contactPerson:r.contact_person||'',phone:r.phone||'',email:r.email||'',premisesAddress:r.premises_address||'',premisesNumber:r.premises_number||'',paymentStatus:r.payment_status||'',startsOn:r.starts_on,endsOn:r.ends_on,indefinite:r.indefinite,areaSqm:Number(r.area_sqm),priceSqmNet:Number(r.price_sqm_net),priceSqmGross:Number(r.price_sqm_gross),parkingNet:Number(r.parking_net),parkingGross:Number(r.parking_gross),internetNet:Number(r.internet_net),internetGross:Number(r.internet_gross)};}
 async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
     if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
-    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts]=await Promise.all([
+    const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,can_view_important,created_at&order=created_at.asc'),
       pgGet('locations?select=*&order=name.asc'),
       pgGet('profile_locations?select=profile_id,location_id'),
@@ -318,11 +318,15 @@ async function loadCloudDB({silent=false}={}){
       pgGet('coin_vouchers?select=*&order=redeemed_at.desc'),
       pgGet('work_shifts?select=*&order=starts_at.asc'),
       pgGet('rental_actions?select=*&order=due_on.asc'),
-      pgGet('important_alerts?select=*&resolved_at=is.null&order=due_on.asc')
+      pgGet('important_alerts?select=*&resolved_at=is.null&order=due_on.asc'),
+      pgGet('rental_rooms?select=*&order=building.asc,floor.asc,room_number.asc'),
+      pgGet('rental_documents?select=*&order=created_at.desc')
     ]);
     state.attendance=(attendance||[]).map(a=>({id:a.id,userId:a.profile_id,locationId:a.location_id,startedAt:a.started_at,endedAt:a.ended_at,startedBy:a.started_by,endedBy:a.ended_by}));
     state.inspections=(inspections||[]).map(i=>({id:i.id,locationId:i.location_id,name:i.name,validUntil:i.valid_until,lastInspected:i.last_inspected,notes:i.notes||''}));
     state.rentals=(rentals||[]).map(mapRental);
+    state.rentalRooms=(rentalRooms||[]).map(x=>({id:x.id,locationId:x.location_id,building:x.building,floor:x.floor,number:x.room_number,areaSqm:Number(x.area_sqm),hasMeter:x.has_electric_meter,meterReading:x.meter_reading,meterReadOn:x.meter_read_on}));
+    state.rentalDocuments=(rentalDocuments||[]).map(x=>({id:x.id,rentalId:x.rental_id,path:x.storage_path,name:x.file_name,size:x.size_bytes}));
     state.rentalActions=(rentalActions||[]).map(x=>({id:x.id,rentalId:x.rental_id,kind:x.kind,dueOn:x.due_on,notes:x.notes||'',completedAt:x.completed_at}));
     state.importantAlerts=(importantAlerts||[]).map(x=>({id:x.id,kind:x.kind,sourceId:x.source_id,dueOn:x.due_on,title:x.title,details:x.details,locationId:x.location_id,createdAt:x.created_at,inProgressAt:x.in_progress_at}));
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
@@ -421,7 +425,7 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
-  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
+  if(state.mode==='demo'){state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
   if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
   if(!canViewImportant()&&state.tab==='important')state.tab='tasks';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
@@ -572,6 +576,25 @@ const rentMoney=n=>new Intl.NumberFormat('pl-PL',{style:'currency',currency:'PLN
 const rentalPaymentLabel=s=>({reliable:'Rzetelny płatnik',monitor:'Pod kontrolą',problematic:'Problematyczny'}[s]||'Nie oznaczono');
 const rentalActionLabel=kind=>({cesja:'Cesja',aneks:'Aneks',wypowiedzenie:'Wypowiedzenie'}[kind]||kind);
 function rentalTotals(r){return {net:r.areaSqm*r.priceSqmNet+r.parkingNet+r.internetNet,gross:r.areaSqm*r.priceSqmGross+r.parkingGross+r.internetGross};}
+const HOTEL_FLOORS={'Smolańska 3':['Piwnica','Parter','1 piętro','2 piętro','3 piętro','4 piętro'],'Smolańska 4':['Piwnica','Parter','1 piętro','2 piętro','3 piętro'],Parking:['Parking']};
+function isHotelTur(id){return /hotel\s*tur/i.test(getLoc(id)?.name||'');}
+function rentalRoomLabel(room){return room?`${room.building} / ${room.floor} / ${room.number}`:'';}
+function rentalCard(r){
+  const total=rentalTotals(r),room=state.rentalRooms.find(x=>x.id===r.roomId),docs=state.rentalDocuments.filter(x=>x.rentalId===r.id);
+  return `<article class="rental-card"><div class="rental-head"><div><h3>${esc(r.contractor)}</h3><small>NIP: ${esc(r.nip||'—')} • ${esc(r.contactPerson||'Brak osoby kontaktowej')}</small></div><button class="smallbtn" data-edit-rental="${esc(r.id)}">Edytuj</button></div>
+  <div class="rental-meta"><span>Od ${esc(r.startsOn)}</span><span>${r.indefinite?'Na czas nieokreślony':`Do ${esc(r.endsOn||'—')}`}</span><span>${esc(r.areaSqm)} m²</span></div>
+  <div class="rental-premises">${room?esc(rentalRoomLabel(room)):esc(r.premisesAddress||'Adres nie wpisany')}${!room&&r.premisesNumber?` • Lokal ${esc(r.premisesNumber)}`:''}</div>
+  <div class="rental-payment ${esc(r.paymentStatus||'unmarked')}">${rentalPaymentLabel(r.paymentStatus)}</div>
+  <div class="rental-prices"><div><small>Czynsz za m²</small><b>${rentMoney(r.priceSqmNet)} netto</b><span>${rentMoney(r.priceSqmGross)} brutto</span></div><div><small>Parking</small><b>${rentMoney(r.parkingNet)} netto</b><span>${rentMoney(r.parkingGross)} brutto</span></div><div><small>Internet</small><b>${rentMoney(r.internetNet)} netto</b><span>${rentMoney(r.internetGross)} brutto</span></div></div>
+  <div class="rental-total"><span>Miesięcznie łącznie</span><strong>${rentMoney(total.net)} netto<br>${rentMoney(total.gross)} brutto</strong></div>
+  <div class="rental-contact">${r.phone?`<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:''}</div>
+  <div class="rental-actions"><div class="subheading">Umowa PDF</div>${docs.map(d=>`<div class="rental-action"><span>📄 ${esc(d.name)} • ${bytes(d.size)}</span><button class="smallbtn" data-view-rental-pdf="${esc(d.id)}">Otwórz</button></div>`).join('')||'<small class="subtle">Brak pliku PDF.</small>'}<button class="smallbtn" data-add-rental-pdf="${esc(r.id)}">+ Dodaj PDF</button></div>
+  <div class="rental-actions"><div class="subheading">Planowane dokumenty</div>${state.rentalActions.filter(a=>a.rentalId===r.id).map(a=>`<div class="rental-action"><span>${esc(rentalActionLabel(a.kind))} · ${esc(a.dueOn)}${a.completedAt?' · GOTOWE':''}</span>${!a.completedAt?`<button class="smallbtn" data-edit-rental-action="${esc(a.id)}">Edytuj</button>`:''}</div>`).join('')||'<small class="subtle">Brak zaplanowanych dokumentów.</small>'}<button class="smallbtn gold" data-add-rental-action="${esc(r.id)}">+ Cesja / aneks / wypowiedzenie</button></div></article>`;
+}
+function renderHotelRooms(locId,rentals){
+  const rooms=state.rentalRooms.filter(x=>x.locationId===locId);
+  return `<div class="hotel-register">${Object.entries(HOTEL_FLOORS).map(([building,floors])=>`<section class="hotel-building"><h3>${esc(building)}</h3>${floors.map(floor=>{const list=rooms.filter(x=>x.building===building&&x.floor===floor);return `<div class="hotel-floor"><div class="hotel-floor-head"><b>${esc(floor)}</b><button class="smallbtn" data-add-room="${esc(building)}" data-floor="${esc(floor)}">+ Pomieszczenie</button></div>${list.map(room=>`<div class="hotel-room"><div><b>${esc(room.number)}</b> · ${esc(room.areaSqm)} m²<br><small>${room.hasMeter?`Licznik prądu: ${room.meterReading==null?'brak odczytu':esc(room.meterReading)} ${room.meterReadOn?`(${esc(room.meterReadOn)})`:''}`:'Bez licznika prądu'}</small></div><div><button class="smallbtn" data-edit-room="${esc(room.id)}">Edytuj</button> <button class="smallbtn" data-room-rental="${esc(room.id)}">+ Umowa</button></div></div>${rentals.filter(r=>r.roomId===room.id).map(rentalCard).join('')}`).join('')||'<small class="subtle">Brak pomieszczeń.</small>'}</div>`}).join('')}</section>`).join('')}</div>`;
+}
 function renderRentalsPage(){
   if(!canManageRentals())return '';
   const locs=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
@@ -580,14 +603,9 @@ function renderRentalsPage(){
   const rentals=state.rentals.filter(r=>r.locationId===locId);
   return `<div class="toolbar"><div><div class="eyebrow">Ewidencja najmu</div><h2 class="section-title">Umowy najmu</h2></div><button class="goldbtn" id="add-rental" ${locId?'':'disabled'}>+ Umowa najmu</button></div>
   <div class="rental-location-tabs">${locs.map(l=>`<button class="chip ${l.id===locId?'active':''}" data-rental-location="${esc(l.id)}">${esc(l.name)}</button>`).join('')}</div>
-  <div class="subheading">Umowy — ${esc(getLoc(locId)?.name||'wybierz obiekt')}</div>
-  <div class="rental-list">${rentals.map(r=>{const total=rentalTotals(r);return `<article class="rental-card"><div class="rental-head"><div><h3>${esc(r.contractor)}</h3><small>NIP: ${esc(r.nip||'—')} • ${esc(r.contactPerson||'Brak osoby kontaktowej')}</small></div><button class="smallbtn" data-edit-rental="${esc(r.id)}">Edytuj</button></div>
-  <div class="rental-meta"><span>Od ${esc(r.startsOn)}</span><span>${r.indefinite?'Na czas nieokreślony':`Do ${esc(r.endsOn||'—')}`}</span><span>${esc(r.areaSqm)} m²</span></div>
-  <div class="rental-premises">${esc(r.premisesAddress||'Adres nie wpisany')}${r.premisesNumber?` • Lokal ${esc(r.premisesNumber)}`:''}</div>
-  <div class="rental-payment ${esc(r.paymentStatus||'unmarked')}">${rentalPaymentLabel(r.paymentStatus)}</div>
-  <div class="rental-prices"><div><small>Czynsz za m²</small><b>${rentMoney(r.priceSqmNet)} netto</b><span>${rentMoney(r.priceSqmGross)} brutto</span></div><div><small>Parking</small><b>${rentMoney(r.parkingNet)} netto</b><span>${rentMoney(r.parkingGross)} brutto</span></div><div><small>Internet</small><b>${rentMoney(r.internetNet)} netto</b><span>${rentMoney(r.internetGross)} brutto</span></div></div>
-  <div class="rental-total"><span>Miesięcznie łącznie</span><strong>${rentMoney(total.net)} netto<br>${rentMoney(total.gross)} brutto</strong></div>
-  <div class="rental-contact">${r.phone?`<a href="tel:${esc(r.phone)}">${esc(r.phone)}</a>`:''}${r.email?`<a href="mailto:${esc(r.email)}">${esc(r.email)}</a>`:''}</div><div class="rental-actions"><div class="subheading">Planowane dokumenty</div>${state.rentalActions.filter(a=>a.rentalId===r.id).map(a=>`<div class="rental-action"><span>${esc(rentalActionLabel(a.kind))} · ${esc(a.dueOn)}${a.completedAt?' · GOTOWE':''}</span>${!a.completedAt?`<button class="smallbtn" data-edit-rental-action="${esc(a.id)}">Edytuj</button>`:''}</div>`).join('')||'<small class="subtle">Brak zaplanowanych dokumentów.</small>'}<button class="smallbtn gold" data-add-rental-action="${esc(r.id)}">+ Cesja / aneks / wypowiedzenie</button></div></article>`}).join('')||'<div class="empty">Brak umów dla tego obiektu.</div>'}</div>`;
+  ${isHotelTur(locId)?renderHotelRooms(locId,rentals):''}
+  <div class="subheading">${isHotelTur(locId)?'Umowy bez przypisanego pomieszczenia':'Umowy — '+esc(getLoc(locId)?.name||'wybierz obiekt')}</div>
+  <div class="rental-list">${rentals.filter(r=>!isHotelTur(locId)||!r.roomId||!state.rentalRooms.some(x=>x.id===r.roomId)).map(rentalCard).join('')||'<div class="empty">Brak umów w tym widoku.</div>'}</div>`;
 }
 function renderLocationsPage(){
   const visible=isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id));
@@ -903,6 +921,11 @@ function renderModal(){
   if(state.modal==='addDiscipline')return renderDisciplineModal();
   if(state.modal==='coinAdjust')return renderCoinModal();
   const close='<button class="ghost" data-close>Anuluj</button>';
+  if(state.modal==='room'){
+    const room=state.rentalRooms.find(x=>x.id===state.roomId),building=room?.building||state.roomBuilding||'Smolańska 3',floor=room?.floor||state.roomFloor||'Parter';
+    return `<div class="modal-bg"><div class="modal"><h2>${room?'Edytuj pomieszczenie':'Nowe pomieszczenie'}</h2><div class="modal-sub">${esc(building)} / ${esc(floor)}</div><div class="formgrid"><div class="field"><label>Numer / nazwa pomieszczenia</label><input id="f-room-number" maxlength="80" value="${esc(room?.number||'')}"></div><div class="field"><label>Powierzchnia (m²)</label><input id="f-room-area" type="number" min="0.01" step="0.01" value="${room?.areaSqm??''}"></div></div><label class="checkrow"><input id="f-room-meter" type="checkbox" ${room?.hasMeter?'checked':''}> Licznik energii elektrycznej</label><div class="formgrid" id="room-meter-fields"><div class="field"><label>Stan licznika</label><input id="f-room-reading" type="number" min="0" step="0.001" value="${room?.meterReading??''}"></div><div class="field"><label>Data odczytu</label><input id="f-room-read-on" type="date" value="${esc(room?.meterReadOn||'')}"></div></div><div class="modal-actions">${room&&isAdmin()?'<button class="dangerbtn" id="delete-room">Usuń pomieszczenie</button>':''}${close}<button class="goldbtn" id="save-room">Zapisz</button></div></div></div>`;
+  }
+  if(state.modal==='rentalPdf')return `<div class="modal-bg"><div class="modal pdf-modal"><h2>${esc(state.pdfName||'Umowa PDF')}</h2><div id="rental-pdf-content" class="pdf-content">Otwieranie dokumentu…</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button></div></div></div>`;
   if(state.modal==='editAttendanceStart'){const a=state.attendance.find(x=>x.id===state.attendanceId);if(!a)return '';const d=new Date(a.startedAt),local=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);return `<div class="modal-bg"><div class="modal"><h2>Korekta początku pracy</h2><div class="modal-sub">${esc(getUser(a.userId)?.name||'Pracownik')} · ${esc(getLoc(a.locationId)?.name||'Obiekt')}</div><div class="field"><label>Rzeczywisty początek (data i godzina)</label><input id="f-attendance-start" type="datetime-local" value="${local}"></div>${a.endedAt?`<div class="status-note">Koniec meldunku: ${fmtDate(a.endedAt)}</div>`:''}<div class="modal-actions">${close}<button class="goldbtn" id="save-attendance-start">Zapisz korektę</button></div></div></div>`;}
   if(state.modal==='rentalAction'){const a=state.rentalActions.find(x=>x.id===state.actionId);return `<div class="modal-bg"><div class="modal"><h2>${a?'Edytuj plan':'Zaplanuj dokument'}</h2><div class="field"><label>Dokument</label><select id="f-action-kind"><option value="cesja" ${a?.kind==='cesja'?'selected':''}>Cesja</option><option value="aneks" ${a?.kind==='aneks'?'selected':''}>Aneks</option><option value="wypowiedzenie" ${a?.kind==='wypowiedzenie'?'selected':''}>Wypowiedzenie</option></select></div><div class="field"><label>Termin przygotowania</label><input id="f-action-date" type="date" value="${esc(a?.dueOn||'')}"></div><div class="field"><label>Uwagi</label><textarea id="f-action-notes" maxlength="1000">${esc(a?.notes||'')}</textarea></div><div class="modal-actions">${a&&!a.completedAt?'<button class="ghost" id="complete-rental-action">Wykonane</button>':''}${close}<button class="goldbtn" id="save-rental-action">Zapisz</button></div></div></div>`;}
   if(state.modal==='newRental'||state.modal==='editRental'){
@@ -910,7 +933,7 @@ function renderModal(){
     if(edit&&!r)return '';
     return `<div class="modal-bg"><div class="modal rental-modal"><h2>${edit?'Edytuj umowę najmu':'Nowa umowa najmu'}</h2>
     <div class="formgrid"><div class="field"><label>Obiekt</label><select id="f-rental-location">${(isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser().locationIds.includes(l.id))).map(l=>`<option value="${esc(l.id)}" ${l.id===(r?.locationId||state.rentalLocationId)?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Nazwa kontrahenta / najemcy</label><input id="f-rental-contractor" maxlength="160" value="${esc(r?.contractor||'')}" required></div><div class="field"><label>NIP</label><input id="f-rental-nip" maxlength="24" value="${esc(r?.nip||'')}"></div><div class="field"><label>Osoba kontaktowa</label><input id="f-rental-contact" maxlength="120" value="${esc(r?.contactPerson||'')}"></div><div class="field"><label>Telefon</label><input id="f-rental-phone" type="tel" maxlength="50" value="${esc(r?.phone||'')}"></div><div class="field"><label>E-mail</label><input id="f-rental-email" type="email" maxlength="254" value="${esc(r?.email||'')}"></div><div class="field"><label>Początek umowy</label><input id="f-rental-start" type="date" value="${esc(r?.startsOn||'')}"></div><div class="field"><label>Koniec umowy</label><input id="f-rental-end" type="date" value="${esc(r?.endsOn||'')}" ${r?.indefinite?'disabled':''}></div></div>
-    <div class="rental-form-section">Wynajmowany lokal</div><div class="formgrid"><div class="field"><label>Adres lokalu</label><input id="f-rental-address" maxlength="300" value="${esc(r?.premisesAddress||'')}" placeholder="Ulica, numer budynku, miejscowość"></div><div class="field"><label>Numer lokalu / pomieszczenia</label><input id="f-rental-room" maxlength="80" value="${esc(r?.premisesNumber||'')}" placeholder="Np. 12A"></div><div class="field"><label>Status płatnika</label><select id="f-rental-status"><option value="" ${!r?.paymentStatus?'selected':''}>Wybierz status</option><option value="reliable" ${r?.paymentStatus==='reliable'?'selected':''}>Rzetelny płatnik</option><option value="monitor" ${r?.paymentStatus==='monitor'?'selected':''}>Pod kontrolą</option><option value="problematic" ${r?.paymentStatus==='problematic'?'selected':''}>Problematyczny</option></select></div></div>
+    <div class="rental-form-section">Wynajmowany lokal</div><div class="field" id="rental-room-field"><label>Pomieszczenie Hotel Tur (opcjonalnie)</label><select id="f-rental-room-id"><option value="">Bez przypisanego pomieszczenia</option>${state.rentalRooms.filter(x=>x.locationId===(r?.locationId||state.rentalLocationId)).map(x=>`<option value="${esc(x.id)}" ${x.id===(r?.roomId||state.roomId)?'selected':''}>${esc(rentalRoomLabel(x))} · ${esc(x.areaSqm)} m²</option>`).join('')}</select></div><div class="formgrid"><div class="field"><label>Adres lokalu</label><input id="f-rental-address" maxlength="300" value="${esc(r?.premisesAddress||'')}" placeholder="Ulica, numer budynku, miejscowość"></div><div class="field"><label>Numer lokalu / pomieszczenia</label><input id="f-rental-room" maxlength="80" value="${esc(r?.premisesNumber||'')}" placeholder="Np. 12A"></div><div class="field"><label>Status płatnika</label><select id="f-rental-status"><option value="" ${!r?.paymentStatus?'selected':''}>Wybierz status</option><option value="reliable" ${r?.paymentStatus==='reliable'?'selected':''}>Rzetelny płatnik</option><option value="monitor" ${r?.paymentStatus==='monitor'?'selected':''}>Pod kontrolą</option><option value="problematic" ${r?.paymentStatus==='problematic'?'selected':''}>Problematyczny</option></select></div></div>
     <label class="checkrow"><input id="f-rental-indefinite" type="checkbox" ${r?.indefinite?'checked':''}> Umowa na czas nieokreślony</label>
     <div class="rental-form-section">Powierzchnia i czynsz miesięczny</div><div class="formgrid"><div class="field"><label>Powierzchnia (m²)</label><input id="f-rental-area" type="number" min="0.01" step="0.01" value="${r?.areaSqm||''}"></div><div class="field"><label>Cena za m² netto (zł)</label><input id="f-rental-sqm-net" type="number" min="0" step="0.01" value="${r?.priceSqmNet??''}"></div><div class="field"><label>Cena za m² brutto (zł)</label><input id="f-rental-sqm-gross" type="number" min="0" step="0.01" value="${r?.priceSqmGross??''}"></div></div>
     <div class="rental-form-section">Dodatki miesięczne</div><div class="formgrid"><div class="field"><label>Parking netto (zł)</label><input id="f-rental-parking-net" type="number" min="0" step="0.01" value="${r?.parkingNet??0}"></div><div class="field"><label>Parking brutto (zł)</label><input id="f-rental-parking-gross" type="number" min="0" step="0.01" value="${r?.parkingGross??0}"></div><div class="field"><label>Internet netto (zł)</label><input id="f-rental-internet-net" type="number" min="0" step="0.01" value="${r?.internetNet??0}"></div><div class="field"><label>Internet brutto (zł)</label><input id="f-rental-internet-gross" type="number" min="0" step="0.01" value="${r?.internetGross??0}"></div></div>
@@ -987,13 +1010,22 @@ setTimeout(()=>{
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
-  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;selectedFiles=[];fileInput.value='';render();});
+  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;state.roomId=null;selectedFiles=[];fileInput.value='';render();});
   document.getElementById('logout')?.addEventListener('click',()=>state.mode==='cloud'?signOutCloud():demoLogout());
   document.getElementById('new-task')?.addEventListener('click',()=>{selectedFiles=[];state.modal='newTask';render();});
   document.getElementById('add-location')?.addEventListener('click',()=>{state.modal='newLocation';render();});
   document.getElementById('add-inspection')?.addEventListener('click',()=>{state.inspectionId=null;state.modal='newInspection';render();});
   document.querySelectorAll('[data-rental-location]').forEach(b=>b.onclick=()=>{state.rentalLocationId=b.dataset.rentalLocation;render();});
-  document.getElementById('add-rental')?.addEventListener('click',()=>{state.rentalId=null;state.modal='newRental';render();});
+  document.getElementById('add-rental')?.addEventListener('click',()=>{state.rentalId=null;state.roomId=null;state.modal='newRental';render();});
+  document.querySelectorAll('[data-add-room]').forEach(b=>b.onclick=()=>{state.roomId=null;state.roomBuilding=b.dataset.addRoom;state.roomFloor=b.dataset.floor;state.modal='room';render();});
+  document.querySelectorAll('[data-edit-room]').forEach(b=>b.onclick=()=>{state.roomId=b.dataset.editRoom;state.modal='room';render();});
+  document.querySelectorAll('[data-room-rental]').forEach(b=>b.onclick=()=>{state.roomId=b.dataset.roomRental;state.rentalId=null;state.modal='newRental';render();});
+  document.getElementById('save-room')?.addEventListener('click',saveRentalRoom);
+  document.getElementById('delete-room')?.addEventListener('click',deleteRentalRoom);
+  document.getElementById('f-room-meter')?.addEventListener('change',updateRoomMeterFields);
+  updateRoomMeterFields();
+  document.querySelectorAll('[data-add-rental-pdf]').forEach(b=>b.onclick=()=>{state.rentalId=b.dataset.addRentalPdf;document.getElementById('rental-pdf-input').click();});
+  document.querySelectorAll('[data-view-rental-pdf]').forEach(b=>b.onclick=()=>viewRentalPdf(b.dataset.viewRentalPdf));
   document.querySelectorAll('[data-edit-rental]').forEach(b=>b.onclick=()=>{state.rentalId=b.dataset.editRental;state.modal='editRental';render();});
   document.querySelectorAll('[data-add-rental-action]').forEach(b=>b.onclick=()=>{state.rentalId=b.dataset.addRentalAction;state.actionId=null;state.modal='rentalAction';render();});
   document.querySelectorAll('[data-edit-rental-action]').forEach(b=>b.onclick=()=>{const a=state.rentalActions.find(x=>x.id===b.dataset.editRentalAction);state.rentalId=a?.rentalId;state.actionId=a?.id;state.modal='rentalAction';render();});
@@ -1004,8 +1036,12 @@ setTimeout(()=>{
   document.getElementById('save-rental')?.addEventListener('click',saveRental);
   document.getElementById('delete-rental')?.addEventListener('click',deleteRental);
   document.getElementById('f-rental-indefinite')?.addEventListener('change',e=>{document.getElementById('f-rental-end').disabled=e.target.checked;if(e.target.checked)document.getElementById('f-rental-end').value='';});
+  document.getElementById('f-rental-location')?.addEventListener('change',e=>{const field=document.getElementById('rental-room-field'),select=document.getElementById('f-rental-room-id');if(!field||!select)return;field.hidden=!isHotelTur(e.target.value);select.innerHTML='<option value="">Bez przypisanego pomieszczenia</option>'+state.rentalRooms.filter(x=>x.locationId===e.target.value).map(x=>`<option value="${esc(x.id)}">${esc(rentalRoomLabel(x))} · ${esc(x.areaSqm)} m²</option>`).join('');});
+  const roomField=document.getElementById('rental-room-field');if(roomField)roomField.hidden=!isHotelTur(document.getElementById('f-rental-location').value);
+  document.getElementById('f-rental-room-id')?.addEventListener('change',e=>{const room=state.rentalRooms.find(x=>x.id===e.target.value);if(room&&!state.rentalId){document.getElementById('f-rental-area').value=room.areaSqm;updateRentalFormTotal();}});
   document.querySelectorAll('.rental-modal input').forEach(el=>el.addEventListener('input',updateRentalFormTotal));
   updateRentalFormTotal();
+  if(state.modal==='rentalPdf')loadRentalPdfPreview();
   document.querySelectorAll('[data-edit-inspection]').forEach(b=>b.onclick=()=>{state.inspectionId=b.dataset.editInspection;state.modal='editInspection';render();});
   document.getElementById('save-inspection')?.addEventListener('click',saveInspection);
   document.getElementById('delete-inspection')?.addEventListener('click',deleteInspection);
@@ -1184,6 +1220,61 @@ async function resetTask(){
   await withAction('Resetowanie zadania…',async()=>{if(state.mode==='demo'){Object.assign(t,{status:'open',claimedBy:null,claimedAt:null,deadlineAt:null,completedAt:null,report:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);saveDemoDB();}else{await pgPatch('tasks',`id=eq.${t.id}`,{status:'open',claimed_by:null,claimed_at:null,deadline_at:null,report_text:null,report_submitted_at:null,completed_at:null});await logEvent('reset',`Zadanie „${t.title}” przywrócono jako nowe`,t.id);await loadCloudDB({silent:true});}state.modal='detail';});
 }
 function rentalNumber(id){return Number(document.getElementById(id)?.value||0);}
+function updateRoomMeterFields(){const box=document.getElementById('room-meter-fields');if(box)box.hidden=!document.getElementById('f-room-meter').checked;}
+async function saveRentalRoom(){
+  if(!canManageRentals()||!isHotelTur(state.rentalLocationId))return;
+  const old=state.rentalRooms.find(x=>x.id===state.roomId),number=document.getElementById('f-room-number').value.trim(),area=Number(document.getElementById('f-room-area').value),hasMeter=document.getElementById('f-room-meter').checked,raw=document.getElementById('f-room-reading').value,readOn=document.getElementById('f-room-read-on').value||null,reading=hasMeter&&raw!==''?Number(raw):null;
+  if(!number||!Number.isFinite(area)||area<=0)return toast('Wpisz numer i powierzchnię pomieszczenia.');
+  if(hasMeter&&((reading!==null&&(!Number.isFinite(reading)||reading<0))||!!readOn!==(reading!==null)))return toast('Wpisz stan licznika oraz datę odczytu albo pozostaw oba pola puste.');
+  const value={id:old?.id||uid(),locationId:state.rentalLocationId,building:old?.building||state.roomBuilding,floor:old?.floor||state.roomFloor,number,areaSqm:area,hasMeter,meterReading:reading,meterReadOn:hasMeter?readOn:null};
+  if(state.rentalRooms.some(x=>x.id!==value.id&&x.locationId===value.locationId&&x.building===value.building&&x.floor===value.floor&&x.number.toLowerCase()===number.toLowerCase()))return toast('To pomieszczenie już istnieje.');
+  await withAction('Zapisywanie pomieszczenia…',async()=>{
+    if(state.mode==='demo'){state.db.rentalRooms ||= [];if(old)Object.assign(old,value);else state.db.rentalRooms.push(value);state.rentalRooms=state.db.rentalRooms;saveDemoDB();}
+    else{const row={location_id:value.locationId,building:value.building,floor:value.floor,room_number:number,area_sqm:area,has_electric_meter:hasMeter,meter_reading:reading,meter_read_on:value.meterReadOn};if(old)await pgPatch('rental_rooms',`id=eq.${encodeURIComponent(old.id)}`,row);else await pgPost('rental_rooms',row);await loadCloudDB({silent:true});}
+    state.modal=null;state.roomId=null;
+  });
+}
+async function deleteRentalRoom(){
+  const id=state.roomId;if(!isAdmin()||!id)return;
+  if(state.rentals.some(r=>r.roomId===id))return toast('Najpierw odłącz umowy od pomieszczenia.');
+  if(!confirm('Usunąć pomieszczenie?'))return;
+  await withAction('Usuwanie pomieszczenia…',async()=>{if(state.mode==='demo'){state.db.rentalRooms=state.db.rentalRooms.filter(x=>x.id!==id);state.rentalRooms=state.db.rentalRooms;saveDemoDB();}else{await pgDelete('rental_rooms',`id=eq.${encodeURIComponent(id)}`);await loadCloudDB({silent:true});}state.modal=null;state.roomId=null;});
+}
+async function uploadRentalPdf(file){
+  const rental=state.rentals.find(x=>x.id===state.rentalId);
+  if(!canManageRentals()||!rental)return toast('Nie znaleziono umowy.');
+  if(!file||file.size<1||file.size>50*1024*1024||!(/\.pdf$/i.test(file.name))||file.type&&file.type!=='application/pdf')return toast('Wybierz plik PDF do 50 MB.');
+  if(state.mode==='demo'&&file.size>2*1024*1024)return toast('W trybie demo plik PDF może mieć najwyżej 2 MB.');
+  await withAction('Wysyłanie PDF…',async()=>{
+    if(state.mode==='demo'){state.db.rentalDocuments ||= [];state.db.rentalDocuments.unshift({id:uid(),rentalId:rental.id,name:file.name,size:file.size,preview:await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);})});state.rentalDocuments=state.db.rentalDocuments;try{saveDemoDB();}catch(e){state.db.rentalDocuments.shift();throw new Error('Brak miejsca na plik w pamięci demo.');}}
+    else{const path=`${rental.id}/${Date.now()}-${uid().slice(0,8)}-${safeFileName(file.name)}`;await cloudFetch(`/storage/v1/object/rental-documents/${encodeStoragePath(path)}`,{method:'POST',body:file,headers:{'Content-Type':'application/pdf','x-upsert':'false'},raw:true});try{await pgPost('rental_documents',{rental_id:rental.id,storage_path:path,file_name:file.name,size_bytes:file.size,uploaded_by:currentUser().id});}catch(e){await cloudFetch(`/storage/v1/object/rental-documents/${encodeStoragePath(path)}`,{method:'DELETE',raw:true}).catch(()=>{});throw e;}await loadCloudDB({silent:true});}
+  });
+}
+function viewRentalPdf(id){const doc=state.rentalDocuments.find(x=>x.id===id);if(!doc)return;state.pdfId=id;state.pdfName=doc.name;state.modal='rentalPdf';render();}
+async function loadRentalPdfPreview(){
+  const doc=state.rentalDocuments.find(x=>x.id===state.pdfId),box=document.getElementById('rental-pdf-content');if(!doc||!box)return;
+  try{
+    let url;
+    if(state.mode==='demo'){if(!doc.preview)throw new Error('Plik niedostępny w trybie demo.');url=doc.preview;}
+    else{const response=await cloudFetch(`/storage/v1/object/authenticated/rental-documents/${encodeStoragePath(doc.path)}`,{raw:true});url=URL.createObjectURL(await response.blob());state.pdfUrl=url;}
+    if(state.modal!=='rentalPdf'||state.pdfId!==doc.id){if(state.mode!=='demo')URL.revokeObjectURL(url);return;}
+    box.innerHTML=`<div class="pdf-pages">Ładowanie stron…</div><div class="modal-actions"><a class="smallbtn" href="${esc(url)}" download="${esc(doc.name)}">Pobierz PDF</a></div>`;
+    const pdfjs=await import('./pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc='./pdf.worker.min.mjs';
+    const pdf=await pdfjs.getDocument(url).promise,pages=box.querySelector('.pdf-pages');
+    if(state.modal!=='rentalPdf'||!pages)return;
+    pages.textContent='';
+    for(let n=1;n<=pdf.numPages;n++){
+      if(state.modal!=='rentalPdf'||state.pdfId!==doc.id)break;
+      const page=await pdf.getPage(n),base=page.getViewport({scale:1}),scale=Math.min(2,Math.max(.5,(pages.clientWidth-12)/base.width)),view=page.getViewport({scale});
+      const canvas=document.createElement('canvas');canvas.width=Math.ceil(view.width);canvas.height=Math.ceil(view.height);canvas.setAttribute('aria-label',`Strona ${n} z ${pdf.numPages}`);pages.appendChild(canvas);
+      await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise;
+    }
+  }catch(e){
+    if(state.modal==='rentalPdf'&&state.pdfUrl){box.innerHTML=`<div class="status-note">Podgląd stron jest niedostępny w tej przeglądarce. Możesz pobrać dokument.</div><div class="modal-actions"><a class="smallbtn" href="${esc(state.pdfUrl)}" download="${esc(doc.name)}">Pobierz PDF</a></div>`;}
+    else box.textContent=`Nie udało się otworzyć PDF: ${e.message}`;
+  }
+}
 function updateRentalFormTotal(){
   const box=document.getElementById('rental-live-total');if(!box)return;
   const area=rentalNumber('f-rental-area');
@@ -1193,7 +1284,8 @@ function updateRentalFormTotal(){
 }
 async function saveRental(){
   if(!canManageRentals())return;
-  const value={locationId:document.getElementById('f-rental-location').value,contractor:document.getElementById('f-rental-contractor').value.trim(),nip:document.getElementById('f-rental-nip').value.trim(),contactPerson:document.getElementById('f-rental-contact').value.trim(),phone:document.getElementById('f-rental-phone').value.trim(),email:document.getElementById('f-rental-email').value.trim(),premisesAddress:document.getElementById('f-rental-address').value.trim(),premisesNumber:document.getElementById('f-rental-room').value.trim(),paymentStatus:document.getElementById('f-rental-status').value||null,startsOn:document.getElementById('f-rental-start').value,indefinite:document.getElementById('f-rental-indefinite').checked,endsOn:document.getElementById('f-rental-end').value||null,areaSqm:rentalNumber('f-rental-area'),priceSqmNet:rentalNumber('f-rental-sqm-net'),priceSqmGross:rentalNumber('f-rental-sqm-gross'),parkingNet:rentalNumber('f-rental-parking-net'),parkingGross:rentalNumber('f-rental-parking-gross'),internetNet:rentalNumber('f-rental-internet-net'),internetGross:rentalNumber('f-rental-internet-gross')};
+  const value={locationId:document.getElementById('f-rental-location').value,roomId:document.getElementById('f-rental-room-id').value||null,contractor:document.getElementById('f-rental-contractor').value.trim(),nip:document.getElementById('f-rental-nip').value.trim(),contactPerson:document.getElementById('f-rental-contact').value.trim(),phone:document.getElementById('f-rental-phone').value.trim(),email:document.getElementById('f-rental-email').value.trim(),premisesAddress:document.getElementById('f-rental-address').value.trim(),premisesNumber:document.getElementById('f-rental-room').value.trim(),paymentStatus:document.getElementById('f-rental-status').value||null,startsOn:document.getElementById('f-rental-start').value,indefinite:document.getElementById('f-rental-indefinite').checked,endsOn:document.getElementById('f-rental-end').value||null,areaSqm:rentalNumber('f-rental-area'),priceSqmNet:rentalNumber('f-rental-sqm-net'),priceSqmGross:rentalNumber('f-rental-sqm-gross'),parkingNet:rentalNumber('f-rental-parking-net'),parkingGross:rentalNumber('f-rental-parking-gross'),internetNet:rentalNumber('f-rental-internet-net'),internetGross:rentalNumber('f-rental-internet-gross')};
+  if(value.roomId&&!state.rentalRooms.some(x=>x.id===value.roomId&&x.locationId===value.locationId))return toast('Pomieszczenie nie należy do wybranego obiektu.');
   if(!value.contractor||!value.locationId||!value.startsOn||value.areaSqm<=0)return toast('Wpisz kontrahenta, obiekt, początek umowy i powierzchnię.');
   if(!value.indefinite&&!value.endsOn)return toast('Wybierz koniec umowy albo czas nieokreślony.');
   if(value.indefinite)value.endsOn=null;
@@ -1210,7 +1302,7 @@ async function saveRental(){
       if(edit)Object.assign(state.db.rentals.find(r=>r.id===id),value);else state.db.rentals.push({id:uid(),...value});
       saveDemoDB();state.rentals=state.db.rentals;
     }else{
-      const row={location_id:value.locationId,contractor:value.contractor,nip:value.nip,contact_person:value.contactPerson,phone:value.phone,email:value.email,premises_address:value.premisesAddress,premises_number:value.premisesNumber,payment_status:value.paymentStatus,starts_on:value.startsOn,ends_on:value.endsOn,indefinite:value.indefinite,area_sqm:value.areaSqm,price_sqm_net:value.priceSqmNet,price_sqm_gross:value.priceSqmGross,parking_net:value.parkingNet,parking_gross:value.parkingGross,internet_net:value.internetNet,internet_gross:value.internetGross};
+      const row={location_id:value.locationId,room_id:value.roomId,contractor:value.contractor,nip:value.nip,contact_person:value.contactPerson,phone:value.phone,email:value.email,premises_address:value.premisesAddress,premises_number:value.premisesNumber,payment_status:value.paymentStatus,starts_on:value.startsOn,ends_on:value.endsOn,indefinite:value.indefinite,area_sqm:value.areaSqm,price_sqm_net:value.priceSqmNet,price_sqm_gross:value.priceSqmGross,parking_net:value.parkingNet,parking_gross:value.parkingGross,internet_net:value.internetNet,internet_gross:value.internetGross};
       if(edit)await pgPatch('rental_agreements',`id=eq.${encodeURIComponent(id)}`,row);else await pgPost('rental_agreements',row);
       await refreshImportantCloud();
     }
@@ -1379,6 +1471,7 @@ function updateTimers(){
   document.querySelectorAll('[data-attendance-start]').forEach(el=>{const tick=()=>{el.textContent=duration(Date.now()-new Date(el.dataset.attendanceStart).getTime());};tick();});document.querySelectorAll('[data-deadline]').forEach(el=>{if(!el.dataset.deadline)return;const ms=new Date(el.dataset.deadline)-Date.now();el.textContent=duration(ms);el.classList.toggle('over',ms<0);});document.querySelectorAll('[data-claim-start]').forEach(el=>{const now=Date.now();el.disabled=now<new Date(el.dataset.claimStart).getTime()||now>=new Date(el.dataset.claimEnd).getTime();});}
 
 fileInput.addEventListener('change',()=>{const max=(BASE_CFG.MAX_ATTACHMENT_MB||50)*1024*1024,arr=[...fileInput.files],too=arr.find(f=>f.size>max);if(too){toast(`${too.name} przekracza limit ${BASE_CFG.MAX_ATTACHMENT_MB||50} MB.`);fileInput.value='';return;}selectedFiles=arr;const box=document.getElementById('file-list');if(box)box.innerHTML=selectedFiles.map(f=>`<span class="filetag">${esc(f.name)} • ${bytes(f.size)}</span>`).join('');});
+document.getElementById('rental-pdf-input').addEventListener('change',async e=>{const file=e.target.files?.[0];e.target.value='';if(file)await uploadRentalPdf(file);});
 window.addEventListener('storage',e=>{if(state.mode==='demo'&&e.key===DB_KEY){state.db=loadDemoDB();render();}});
 syncChannel?.addEventListener('message',()=>{if(state.mode==='demo'){state.db=loadDemoDB();render();}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state.mode==='cloud'&&state.auth&&!state.modal)loadCloudDB({silent:true}).catch(()=>{});});
