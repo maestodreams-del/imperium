@@ -1452,3 +1452,8 @@ th{color:#9fc8dc!important;background:#121d26!important}td{border-color:rgba(98,
 .rental-action{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
 .worker-plans{margin:14px 0}
 @media(max-width:600px){.important-card{align-items:flex-start;flex-direction:column}.important-card button{align-self:flex-end}}
+.important-section-title{margin:20px 0 0}
+.important-mission{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;color:#d8e7ef;cursor:pointer}
+.important-mission span{display:grid;gap:5px}.important-mission b{font-size:15px}
+.important-mission small{color:#9db4c2;font-size:11px}.important-mission em{font-size:10px;color:#8dc8e5;font-style:normal}
+@media(max-width:600px){.important-mission{align-items:flex-start;flex-direction:column}}
