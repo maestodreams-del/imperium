@@ -13,6 +13,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  const state={mode:'cloud'},BASE_CFG={};
  const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const currentUser=()=>({id:'me'}),getUser=id=>({name:id}),initials=()=> 'M',imperialIcon=()=>'',safeFileName=s=>s.replace(/[^a-zA-Z0-9.]/g,'_'),encodeStoragePath=p=>p.split('/').map(encodeURIComponent).join('/');
+ const bindPublicProfileLinks=()=>{};
  window.rows=[{id:'old',user_id:'other',message:'Witaj',attachments:[],created_at:new Date().toISOString()}];window.calls=[];window.toastMessages=[];const toast=s=>window.toastMessages.push(s);
  const pgGet=async q=>{window.calls.push(['get',q]);return [...window.rows].reverse();};
  const pgPost=async(t,b)=>{window.calls.push(['post',t,b]);window.rows.push({...b,id:'new',created_at:new Date().toISOString()});};
