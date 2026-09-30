@@ -433,7 +433,7 @@ function demoLogout(){ localStorage.removeItem(DEMO_SESSION_KEY);state.demoSessi
 // ---------- UI ----------
 function imperialIcon(id){
   const p={
-    tasks:'<svg viewBox="0 0 24 24"><path d="M5 5h14v14H5zM8 9h8M8 12h8M8 15h5"/></svg>',
+    tasks:'<svg viewBox="0 0 24 24"><path d="M9 4h10a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4M9 3h6v4H9zM7 12l2 2 4-4M7 18h10"/></svg>',
     locations:'<svg viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11a6 6 0 1 0-12 0c0 5.9 6 11 6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
     inspections:'<svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="1"/><path d="M8 3v4M16 3v4M8 11h8M8 15h5"/></svg>',
     rentals:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/><path d="M16 17h2"/></svg>',
@@ -443,7 +443,7 @@ function imperialIcon(id){
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
     chat:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h6"/></svg>',
     team:'<svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20c0-4 2.5-6 6-6s6 2 6 6M15 15c3 0 5 1.5 5 5"/></svg>',
-    profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4.2 2.8-7 7-7s7 2.8 7 7"/></svg>',settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
+    profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4.2 2.8-7 7-7s7 2.8 7 7"/></svg>',salary:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M16 12h5v5h-5z"/><circle cx="17" cy="14.5" r=".6"/></svg>',settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
   };return p[id]||'';
 }
 function nav(id,label,extra=''){return `<button class="navitem ${state.tab===id?'active':''} ${extra}" data-tab="${id}"><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
@@ -472,13 +472,13 @@ function render(){
   if(!isAdmin()&&state.tab==='invoices')state.tab='tasks';
   if(!canViewImportant()&&state.tab==='important')state.tab='tasks';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
-  app.innerHTML=`<div class="app aureus-shell">
+  app.innerHTML=`<div class="app aureus-shell light-shell">
   <header class="topbar"><div class="topbar-inner">
-    <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>COMMAND SYSTEM <b>// AUREUS</b></small></div></div>
-    <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'ADMIN':'OPERATIVE'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie">＋</button>':''}<button class="command-exit" id="logout" title="Wyloguj">↗</button></div>
+    <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>Zadania i zarządzanie</small></div></div>
+    <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'Administrator':'Pracownik'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
   </div></header>
   <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','System')}</div></nav>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','Ustawienia')}</div></nav>
   ${renderModal()}</div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');
   if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
@@ -675,7 +675,7 @@ async function saveExtraMission(){if(extraMissionSaving)return;const title=docum
   if(state.filter!=='all')tasks=tasks.filter(t=>state.filter==='mine'?t.claimedBy===u.id&&t.status!=='done':t.status===state.filter);
   tasks.sort((a,b)=>({urgent:0,high:1,normal:2}[a.priority]-{urgent:0,high:1,normal:2}[b.priority])||(new Date(b.createdAt)-new Date(a.createdAt)));
   const noLoc=u.role!=='admin'&&u.locationIds.length===0?'<div class="status-note">Twoje konto jest aktywne, ale administrator nie przypisał jeszcze żadnego obiektu. Po przypisaniu zadania pojawią się tutaj automatycznie.</div>':'';
-  return `${noLoc}<section class="hero command-hero"><div class="hero-card"><div class="hero-code">AUREUS / 01</div><div class="eyebrow">Centrum dowodzenia</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'Nadzór operacyjny • zadania • obiekty • raporty':'Panel operacyjny • zadania • raporty • meldunek'}</p><div class="hero-scan"></div></div><div class="stats"><div class="stat"><b>${open}</b><span>NOWE</span></div><div class="stat"><b>${prog}</b><span>W TOKU</span></div><div class="stat"><b>${rev}</b><span>AKCEPTACJA</span></div><div class="stat ${urg?'alert':''}"><b>${urg}</b><span>PILNE</span></div></div></section>
+  return `${noLoc}<section class="hero command-hero"><div class="hero-card"><div class="hero-code">AUREUS / 01</div><div class="eyebrow">Twój dzień</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'Zarządzaj zadaniami, zespołem i obiektami':'Twoje zadania, raporty i czas pracy'}</p><div class="hero-scan"></div></div><div class="stats"><div class="stat"><b>${open}</b><span>NOWE</span></div><div class="stat"><b>${prog}</b><span>W TOKU</span></div><div class="stat"><b>${rev}</b><span>AKCEPTACJA</span></div><div class="stat ${urg?'alert':''}"><b>${urg}</b><span>PILNE</span></div></div></section>
   ${renderExtraMissionsSection()}
   <div class="toolbar"><div><div class="eyebrow">Operacje</div><h2 class="section-title">Zadania</h2></div><div class="filters">${chip('all','Wszystkie')}${chip('open','Nowe')}${chip('in_progress','W toku')}${chip('review','Akceptacja')}${chip('mine','Moje')}${chip('done','Zakończone')}</div></div><div class="grid">${tasks.length?tasks.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak zadań w tym widoku.</div>'}</div>`;
 }
@@ -683,11 +683,11 @@ function taskCard(t,u){
   const loc=getLoc(t.locationId),owner=getUser(t.claimedBy||t.assignedTo),rem=t.deadlineAt?new Date(t.deadlineAt)-Date.now():null,statusClass=t.status==='in_progress'?'progress':t.status==='review'?'review':t.status==='done'?'done':'';
   const now=Date.now(),claimable=t.status==='open'&&(u.role==='admin'||u.locationIds.includes(t.locationId))&&(!t.assignedTo||t.assignedTo===u.id)&&(!t.scheduledEnd||new Date(t.scheduledEnd).getTime()>now);
   const fileCount=(t.attachments?.length||0)+(t.report?.attachments?.length||0);
-  const pcode=t.priority==='urgent'?'CRITICAL':t.priority==='high'?'HIGH':'STANDARD';
+  const pcode=t.priority==='urgent'?'Pilne':t.priority==='high'?'Wysoki':'Normalny';
   return `<article class="task mission-card" data-task="${t.id}">
     <div class="mission-rail"></div>
     <div class="mission-top">
-      <div class="mission-object"><span>SEKTOR</span><b>${esc(loc?.name||'—')}</b></div>
+      <div class="mission-object"><span>OBIEKT</span><b>${esc(loc?.name||'—')}</b></div>
       <div class="mission-priority ${t.priority}"><i></i><span>${pcode}</span></div>
     </div>
     <h3 class="mission-title">${esc(t.title)}</h3>
@@ -700,9 +700,9 @@ function taskCard(t,u){
       <div><span>WYKONAWCA</span><b>${owner?esc(owner.name):'—'}</b></div>
       ${t.rewardCoins?`<div><span>NAGRODA</span><b>+${t.rewardCoins} NK</b></div>`:''}
     </div>
-    ${t.status==='in_progress'||t.status==='review'?`<div class="mission-timer"><span>${t.status==='review'?'TRANSMISJA RAPORTU':'CZAS OPERACJI'}</span><strong class="${rem<0?'over':''}" data-deadline="${t.deadlineAt||''}">${t.status==='review'?'RAPORT WYSŁANY':duration(rem||0)}</strong></div>`:''}
+    ${t.status==='in_progress'||t.status==='review'?`<div class="mission-timer"><span>${t.status==='review'?'Raport do akceptacji':'Pozostały czas'}</span><strong class="${rem<0?'over':''}" data-deadline="${t.deadlineAt||''}">${t.status==='review'?'RAPORT WYSŁANY':duration(rem||0)}</strong></div>`:''}
     <div class="mission-footer">
-      <div class="mission-flags">${t.notes?'<span>NOTE</span>':''}${fileCount?`<span>FILE ${fileCount}</span>`:''}${t.penaltyCoins?`<span>−${t.penaltyCoins} NK</span>`:''}</div>
+      <div class="mission-flags">${t.notes?'<span>Uwagi</span>':''}${fileCount?`<span>Pliki: ${fileCount}</span>`:''}${t.penaltyCoins?`<span>−${t.penaltyCoins} NK</span>`:''}</div>
       <div class="task-actions">${claimable?`<button class="smallbtn gold" data-action="claim" ${t.scheduledStart?`data-claim-start="${t.scheduledStart}" data-claim-end="${t.scheduledEnd}" ${new Date(t.scheduledStart)>new Date()?'disabled':''}`:''}>ROZPOCZNIJ</button>`:''}${t.status==='in_progress'&&t.claimedBy===u.id?'<button class="smallbtn gold" data-action="report">RAPORT</button>':''}${canCreateTasks()?'<button class="smallbtn" data-action="copy">KOPIUJ NA DZIŚ</button>':''}<button class="smallbtn" data-action="detail">OTWÓRZ</button></div>
     </div>
   </article>`;
@@ -1916,7 +1916,7 @@ function initSeason(){
   document.body.appendChild(box);
 }
 
-initSeason();
+// Calm light interface: no decorative animation.
   init();
 })();
 
