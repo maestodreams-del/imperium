@@ -1292,3 +1292,10 @@ update public.invoice_drafts d set seller_snapshot=jsonb_build_object(
 from public.invoice_sellers s where d.seller_id=s.id and d.seller_snapshot is null;
 
 -- For salary savings on a new installation, also apply backend/salary.sql.
+
+
+-- Monthly cleaning charges use the existing rental agreement permissions.
+alter table public.rental_agreements
+  add column if not exists cleaning_net numeric(12,2) not null default 0 check (cleaning_net>=0),
+  add column if not exists cleaning_gross numeric(12,2) not null default 0 check (cleaning_gross>=0);
+notify pgrst, 'reload schema';

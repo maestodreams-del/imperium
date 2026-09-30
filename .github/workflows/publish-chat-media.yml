@@ -1,4 +1,4 @@
-name: Verify and publish IMPERIUM task copying
+name: Verify and publish IMPERIUM rental cleaning
 on:
   push:
     branches: [main]
@@ -29,6 +29,7 @@ jobs:
         run: |
           node --check app.js
           node tests/task-copy-checks.cjs
+          node tests/rental-cleaning-checks.cjs
           cmp app.js android-wrapper/app/src/main/assets/app.js
           cmp styles.css android-wrapper/app/src/main/assets/styles.css
           ! grep -E 'getUserMedia|chat-live-start' app.js
@@ -53,6 +54,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f backend/extra-missions.sql
           psql -v ON_ERROR_STOP=1 -f tests/extra-mission-db-checks.sql
           psql -v ON_ERROR_STOP=1 -f tests/chat-db-checks.sql
+          psql -v ON_ERROR_STOP=1 -c 'create table public.rental_agreements(id integer primary key); insert into public.rental_agreements values(1);'
+          psql -v ON_ERROR_STOP=1 -f backend/rental-cleaning.sql
+          psql -v ON_ERROR_STOP=1 -f backend/rental-cleaning.sql
+          psql -v ON_ERROR_STOP=1 -f tests/rental-cleaning-db-checks.sql
       - name: Verify mobile attachment and playback controls
         run: |
           npm install --prefix "$RUNNER_TEMP/chat-qa" --no-save playwright@1.58.2
@@ -86,6 +91,7 @@ jobs:
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/chat-media.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/profile-messages.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/extra-missions.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/rental-cleaning.sql
           version="$(psql "$SUPABASE_DB_URL" -Atqc 'select greatest(coalesce(max(version),0)+1,2) from public.app_updates')"
           echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
       - name: Package complete web assets
@@ -110,6 +116,6 @@ jobs:
           begin;
           update public.app_updates set active=false where active;
           insert into public.app_updates(version,version_name,package_url,active)
-          values(:'version'::integer,'Kopiuj zadania na dziś',:'package_url',true);
+          values(:'version'::integer,'Najem · sprzątanie',:'package_url',true);
           commit;
           SQL
