@@ -369,6 +369,7 @@ async function loadCloudDB({silent=false}={}){
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
     state.shifts=(shifts||[]).map(s=>({id:s.id,userId:s.profile_id,locationId:s.location_id,startsAt:s.starts_at,endsAt:s.ends_at}));
     state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,canAddInspections:!!p.can_add_inspections,canCreateTasks:!!p.can_create_tasks,canViewTeamHours:!!p.can_view_team_hours,canViewImportant:!!p.can_view_important,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
+    await loadExtraMissions();
     deliverImportantAlerts();
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
@@ -386,7 +387,7 @@ async function logEvent(type,text,taskId=null){
   await pgPost('events',{event_type:type,actor_id:currentUser()?.id||null,task_id:taskId,message:text});
 }
 function startPolling(){ stopPolling(); if(state.mode!=='cloud'||!state.auth)return; pollTimer=setInterval(()=>{if(!state.modal && document.visibilityState!=='hidden')loadCloudDB({silent:true}).catch(()=>{});},BASE_CFG.POLL_INTERVAL_MS||10000); }
-function stopPolling(){if(profileMessageTimer){clearInterval(profileMessageTimer);profileMessageTimer=null;}profileMessages=[];profileUnread=0;publicProfileId=null; if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
+function stopPolling(){if(profileMessageTimer){clearInterval(profileMessageTimer);profileMessageTimer=null;}profileMessages=[];profileUnread=0;publicProfileId=null;extraMissions=[]; if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
 
 // ---------- Config/setup ----------
 function configCode(){ const c=cloudConfig(); if(!c)return ''; return `IMP1:${btoa(JSON.stringify({u:c.url,k:c.key}))}`; }
@@ -646,6 +647,28 @@ function drawChatPlayer(a){const box=document.getElementById('chat-player');if(!
 function bindChatMedia(){
   document.getElementById('chat-attach').onclick=()=>{if(!chatBusy)document.getElementById('chat-files').click();};document.getElementById('chat-files').onchange=e=>{if(!chatBusy){chatFiles.push(...e.target.files);drawChatFiles();}e.target.value='';};drawChatFiles();if(chatAudio instanceof Audio){const a=chatAudioFiles()[chatAudioIndex];if(a)drawChatPlayer(a);}
 }
+let extraMissions=[], extraMissionLoading=false, extraMissionSaving=false, extraMissionError='';
+function extraMissionToday(){return new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'});}
+function extraMissionRows(){return state.mode==='demo'?(state.db.extraMissions||[]):extraMissions;}
+function renderExtraMissionsSection(){return `<section class="extra-missions panel"><div class="extra-missions-head"><div><div class="eyebrow">DODATKOWA PRACA</div><h3>${isAdmin()?'Dodatkowe wykonane misje':'Dzisiaj wykonałem'}</h3></div><button class="goldbtn" data-new-extra-mission>+ Dzisiaj wykonałem</button></div><p class="subtle">Zapisz dodatkową pracę wykonaną poza przydzielonymi zadaniami.</p><div class="extra-mission-history">${renderExtraMissionHistory()}</div></section>`;}
+function renderExtraMissionHistory(){const rows=extraMissionRows().slice().sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,20);return rows.map(m=>`<article class="extra-mission-row"><div class="extra-mission-meta"><b>${esc(m.title)}</b><span>WYKONANO · ${esc(m.done_on)}</span></div><small>${esc(getUser(m.profile_id)?.name||'Pracownik')} · ${esc(getLoc(m.location_id)?.name||'Inne / bez obiektu')} · ${fmtDate(m.created_at)}</small><p>${esc(m.description)}</p>${(Array.isArray(m.attachments)?m.attachments:[]).map(a=>`<button class="smallbtn" data-extra-file="${esc(a.id)}">📎 ${esc(a.name)}</button>`).join('')}</article>`).join('')||`<div class="empty compact">${extraMissionError?esc(extraMissionError):'Brak dodatkowych misji. Dodaj pierwszą wykonaną pracę.'}</div>`;}
+function renderExtraMissionModal(){return `<div class="modal-bg"><div class="modal"><h2>+ Dzisiaj wykonałem</h2><p class="modal-sub">Dodatkowa wykonana misja · ${extraMissionToday()}</p><div class="field"><label>Co wykonałeś?</label><input id="extra-mission-title" maxlength="120" placeholder="Np. Naprawiłem drzwi w pokoju 12"></div><div class="field"><label>Opis wykonanej pracy</label><textarea id="extra-mission-description" maxlength="4000" rows="4" placeholder="Co zostało zrobione i jaki jest rezultat?"></textarea></div><div class="field"><label>Obiekt</label><select id="extra-mission-location"><option value="">Inne / bez obiektu</option>${allowedLocations().filter(l=>l.active).map(l=>`<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('')}</select></div><div class="field"><label>Zdjęcia, wideo lub dokumenty</label><button class="ghost" id="pick-files">📎 Dodaj załączniki</button><div id="file-list" class="attachments"></div></div><div class="modal-actions"><button class="ghost" data-close>Anuluj</button><button class="goldbtn" id="save-extra-mission">Zapisz wykonaną misję</button></div><div id="extra-mission-error" role="status" class="danger-text"></div></div></div>`;}
+async function loadExtraMissions(){if(state.mode!=='cloud'||extraMissionLoading||!currentUser())return;extraMissionLoading=true;const owner=currentUser().id;
+  try{const rows=await pgGet('extra_missions?select=id,profile_id,location_id,title,description,done_on,created_at,attachments&order=created_at.desc&limit=100');if(currentUser()?.id!==owner)return;extraMissions=rows;extraMissionError='';document.querySelectorAll('.extra-mission-history').forEach(box=>{box.innerHTML=renderExtraMissionHistory();bindExtraFileLinks(box);});}
+  catch(e){extraMissionError='Nie udało się pobrać dodatkowych misji.';}finally{extraMissionLoading=false;}}
+function bindExtraFileLinks(root=document){root.querySelectorAll('[data-extra-file]').forEach(b=>b.onclick=()=>openAttachment(b.dataset.extraFile));}
+function bindExtraMissions(){document.querySelectorAll('[data-new-extra-mission]').forEach(b=>b.onclick=()=>{selectedFiles=[];fileInput.value='';state.modal='extraMission';render();});document.getElementById('save-extra-mission')?.addEventListener('click',saveExtraMission);bindExtraFileLinks();}
+async function saveExtraMission(){if(extraMissionSaving)return;const title=document.getElementById('extra-mission-title')?.value.trim(),description=document.getElementById('extra-mission-description')?.value.trim(),locationId=document.getElementById('extra-mission-location')?.value||null,error=document.getElementById('extra-mission-error');
+  if(!title||!description){if(error)error.textContent='Wpisz nazwę i opis wykonanej pracy.';return;}if(locationId&&!allowedLocations().some(l=>l.id===locationId&&l.active)){if(error)error.textContent='Wybierz dostępny obiekt.';return;}
+  const files=selectedFiles.slice(),max=(BASE_CFG.MAX_ATTACHMENT_MB||50)*1024*1024;if(files.length>10||files.some(f=>f.size>max)){if(error)error.textContent='Maksymalnie 10 załączników, każdy do '+(BASE_CFG.MAX_ATTACHMENT_MB||50)+' MB.';return;}
+  extraMissionSaving=true;const button=document.getElementById('save-extra-mission');button.disabled=true;const id=crypto.randomUUID(),uploaded=[],owner=currentUser().id;
+  try{if(state.mode==='demo'){state.db.extraMissions ||= [];state.db.extraMissions.unshift({id,profile_id:owner,location_id:locationId,title,description,done_on:extraMissionToday(),created_at:nowISO(),attachments:files.map(f=>({id:uid(),name:f.name,size:f.size,type:f.type,bucket:'extra-mission-files'}))});saveDemoDB();}
+    else{for(const file of files){const path=`${owner}/${id}/${crypto.randomUUID()}-${safeFileName(file.name)}`;await cloudFetch(`/storage/v1/object/extra-mission-files/${encodeStoragePath(path)}`,{method:'POST',body:file,headers:{'Content-Type':file.type||'application/octet-stream'},raw:true});uploaded.push({id:crypto.randomUUID(),path,name:file.name,size:file.size,type:file.type||'application/octet-stream',bucket:'extra-mission-files'});}await pgPost('extra_missions',{id,profile_id:owner,location_id:locationId,title,description,attachments:uploaded});await loadExtraMissions();}
+    selectedFiles=[];fileInput.value='';state.modal=null;render();toast('Dodatkowa wykonana misja została zapisana.');
+  }catch(e){let committed=false;if(state.mode==='cloud'){try{committed=(await pgGet(`extra_missions?id=eq.${id}&select=id`)).length>0;}catch(_){}if(committed){selectedFiles=[];fileInput.value='';state.modal=null;await loadExtraMissions();render();toast('Dodatkowa misja została zapisana.');}else{for(const a of uploaded)await cloudFetch(`/storage/v1/object/extra-mission-files/${encodeStoragePath(a.path)}`,{method:'DELETE',raw:true}).catch(()=>{});}}
+    if(!committed&&error?.isConnected)error.textContent='Nie udało się zapisać: '+e.message;
+  }finally{extraMissionSaving=false;if(button.isConnected)button.disabled=false;}}
+
   function renderTasksPage(open,prog,rev,urg,u){
   let tasks=[...state.db.tasks];
   if(u.role!=='admin')tasks=tasks.filter(t=>u.locationIds.includes(t.locationId));
@@ -653,6 +676,7 @@ function bindChatMedia(){
   tasks.sort((a,b)=>({urgent:0,high:1,normal:2}[a.priority]-{urgent:0,high:1,normal:2}[b.priority])||(new Date(b.createdAt)-new Date(a.createdAt)));
   const noLoc=u.role!=='admin'&&u.locationIds.length===0?'<div class="status-note">Twoje konto jest aktywne, ale administrator nie przypisał jeszcze żadnego obiektu. Po przypisaniu zadania pojawią się tutaj automatycznie.</div>':'';
   return `${noLoc}<section class="hero command-hero"><div class="hero-card"><div class="hero-code">AUREUS / 01</div><div class="eyebrow">Centrum dowodzenia</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'Nadzór operacyjny • zadania • obiekty • raporty':'Panel operacyjny • zadania • raporty • meldunek'}</p><div class="hero-scan"></div></div><div class="stats"><div class="stat"><b>${open}</b><span>NOWE</span></div><div class="stat"><b>${prog}</b><span>W TOKU</span></div><div class="stat"><b>${rev}</b><span>AKCEPTACJA</span></div><div class="stat ${urg?'alert':''}"><b>${urg}</b><span>PILNE</span></div></div></section>
+  ${renderExtraMissionsSection()}
   <div class="toolbar"><div><div class="eyebrow">Operacje</div><h2 class="section-title">Zadania</h2></div><div class="filters">${chip('all','Wszystkie')}${chip('open','Nowe')}${chip('in_progress','W toku')}${chip('review','Akceptacja')}${chip('mine','Moje')}${chip('done','Zakończone')}</div></div><div class="grid">${tasks.length?tasks.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak zadań w tym widoku.</div>'}</div>`;
 }
 function taskCard(t,u){
@@ -914,6 +938,7 @@ function renderProfilePage(){
     ${profileMessageNavigation()}
     ${canViewTeamHours()?`<div class="profile-tabs"><button class="smallbtn ${state.profileView==='mine'?'gold':''}" data-profile-view="mine">Mój profil</button><button class="smallbtn ${state.profileView==='team'?'gold':''}" data-profile-view="team">Obiekty i zespół</button></div>`:''}
     ${state.profileView==='team'&&canViewTeamHours()?renderTeamHoursPage():`<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL COMMAND FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div><div class="profile-balance"><span>SALDO</span><b>${coinBalance(u.id)} NK</b></div></div>
+    ${renderExtraMissionsSection()}
     <div class="profile-progress-grid">${renderProgressBar('MOJA REALIZACJA',ps.done,ps.total,ps.pct,ps.active+' aktywnych')}${renderProgressBar('REALIZACJA IMPERIUM',allDone,all.length,allPct,'wszystkie zadania systemu')}</div>
     <div class="settings-card shift-list"><div class="subheading">Mój grafik pracy</div>${shiftsFor(u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,20).map(s=>`<div class="shift-row"><div><b>${esc(getLoc(s.locationId)?.name||'Obiekt')}</b><small>${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div></div>`).join('')||'<div class="empty compact">Administrator nie dodał jeszcze zmian.</div>'}</div>
     <div class="voucher-exchange"><div class="eyebrow">WYMIANA NK</div><h3>Imperatorski wymiennik</h3><div class="voucher-options"><label><input type="radio" name="voucher-kind" value="hours_2" checked> 1000 NK · 2 godziny</label><label><input type="radio" name="voucher-kind" value="hours_4"> 2000 NK · 4 godziny</label><label><input type="radio" name="voucher-kind" value="day"> 5000 NK · dzień wolny</label><label><input type="radio" name="voucher-kind" value="bonus_500"> 7500 NK · premia 500 zł</label></div><div class="field" id="voucher-time-field"><label>Początek wolnego (data i godzina)</label><input type="datetime-local" id="voucher-start"></div><div class="field" id="voucher-day-field" hidden><label>Dzień wolny</label><input type="date" id="voucher-day"></div><p class="subtle">Godziny wolnego muszą mieścić się w zapisanej zmianie, a dzień wolny wymaga zmiany w tym dniu. Punkty są pobierane przy wymianie. Premia tworzy wniosek widoczny dla administratora; wypłata jest potwierdzana osobno.</p><button class="goldbtn" id="redeem-voucher">Wymień Nikitocoiny</button></div>
@@ -1140,6 +1165,7 @@ async function lookupCompanyNip(button){
 function invoiceLineFields(l,i){return `<div class="invoice-line" data-invoice-line="${i}"><div class="field"><label>Usługa / towar</label><input data-il="description" maxlength="250" value="${esc(l.description||'')}"></div><div class="invoice-line-numbers"><div class="field"><label>Ilość</label><input data-il="quantity" type="number" min="0.001" step="0.001" value="${esc(l.quantity??'1')}"></div><div class="field"><label>Jednostka</label><input data-il="unit" maxlength="20" value="${esc(l.unit||'usł.')}"></div><div class="field"><label>Cena netto</label><input data-il="unit_net" type="number" min="0" step="0.01" value="${esc(l.unit_net??'')}"></div><div class="field"><label>VAT</label><select data-il="vat_rate"><option value="">Wybierz</option>${['23','8','5'].map(v=>`<option value="${v}" ${String(l.vat_rate)===v?'selected':''}>${v}%</option>`).join('')}</select></div></div><button class="smallbtn" data-remove-invoice-line="${i}">Usuń pozycję</button></div>`;}
 function renderModal(){
   if(!state.modal)return '';
+  if(state.modal==='extraMission')return renderExtraMissionModal();
   if(state.modal==='cloudSetup')return renderCloudSetupModal();
   if(state.modal==='workerCard')return renderWorkerCard();
   if(state.modal==='addDiscipline')return renderDisciplineModal();
@@ -1217,7 +1243,7 @@ function bindCloudSetup(){
   document.getElementById('import-cloud-code')?.addEventListener('click',()=>{try{const c=parseConfigCode(document.getElementById('cloud-code').value);document.getElementById('cloud-url').value=c.url;document.getElementById('cloud-key').value=c.key;toast('Kod wczytany.');}catch(e){toast(e.message);}});
   document.getElementById('save-cloud')?.addEventListener('click',async()=>{try{saveCloudConfig(document.getElementById('cloud-url').value,document.getElementById('cloud-key').value);state.mode='cloud';state.modal=null;state.db=null;state.auth=null;localStorage.removeItem(AUTH_KEY);render();}catch(e){toast(e.message);}});
 }
-function bind(){bindProfileMessaging();if(state.tab!=='chat'){stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);}if(state.tab==='chat'){
+function bind(){bindExtraMissions();bindProfileMessaging();if(state.tab!=='chat'){stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);}if(state.tab==='chat'){
   bindChatMedia();
   setTimeout(()=>loadChatMessages(),0);
   if(window.imperiumChatTimer){
@@ -1748,7 +1774,7 @@ async function uploadFiles(taskId,files,kind){
   const max=(BASE_CFG.MAX_ATTACHMENT_MB||50)*1024*1024;
   for(const f of files){if(f.size>max)throw new Error(`${f.name}: plik przekracza limit ${BASE_CFG.MAX_ATTACHMENT_MB||50} MB.`);const path=`${taskId}/${Date.now()}-${uid().slice(0,8)}-${safeFileName(f.name)}`;await cloudFetch(`/storage/v1/object/task-files/${encodeStoragePath(path)}`,{method:'POST',body:f,headers:{'Content-Type':f.type||'application/octet-stream','x-upsert':'false'},raw:true});await pgPost('task_attachments',{task_id:taskId,uploaded_by:currentUser().id,storage_path:path,file_name:f.name,mime_type:f.type||'application/octet-stream',size_bytes:f.size,kind});}
 }
-function findAttachment(id){for(const t of state.db.tasks){for(const a of (t.attachments||[]))if(a.id===id)return a;for(const a of (t.report?.attachments||[]))if(a.id===id)return a;}return null;}
+function findAttachment(id){for(const m of extraMissionRows()){const a=(m.attachments||[]).find(a=>a.id===id);if(a)return a;}for(const t of state.db.tasks){for(const a of (t.attachments||[]))if(a.id===id)return a;for(const a of (t.report?.attachments||[]))if(a.id===id)return a;}return null;}
 async function openAttachment(id){
   const a = findAttachment(id);
   if(!a) return;
@@ -1761,7 +1787,7 @@ async function openAttachment(id){
     toast('Pobieranie pliku…');
 
     const r = await cloudFetch(
-      `/storage/v1/object/authenticated/task-files/${encodeStoragePath(a.path)}`,
+      `/storage/v1/object/authenticated/${a.bucket==='extra-mission-files'?'extra-mission-files':'task-files'}/${encodeStoragePath(a.path)}`,
       {raw:true}
     );
 

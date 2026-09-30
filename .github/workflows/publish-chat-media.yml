@@ -1,4 +1,4 @@
-name: Verify and publish IMPERIUM profile messages
+name: Verify and publish IMPERIUM extra missions
 on:
   push:
     branches: [main]
@@ -47,6 +47,10 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f backend/profile-messages.sql
           psql -v ON_ERROR_STOP=1 -f backend/profile-messages.sql
           psql -v ON_ERROR_STOP=1 -f tests/profile-message-db-checks.sql
+          psql -v ON_ERROR_STOP=1 -f tests/extra-mission-db-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f backend/extra-missions.sql
+          psql -v ON_ERROR_STOP=1 -f backend/extra-missions.sql
+          psql -v ON_ERROR_STOP=1 -f tests/extra-mission-db-checks.sql
           psql -v ON_ERROR_STOP=1 -f tests/chat-db-checks.sql
       - name: Verify mobile attachment and playback controls
         run: |
@@ -54,6 +58,7 @@ jobs:
           "$RUNNER_TEMP/chat-qa/node_modules/.bin/playwright" install --with-deps chromium
           PLAYWRIGHT_MODULE="$RUNNER_TEMP/chat-qa/node_modules/playwright" node tests/chat-browser-smoke.cjs
           PLAYWRIGHT_MODULE="$RUNNER_TEMP/chat-qa/node_modules/playwright" node tests/profile-message-browser.cjs
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/chat-qa/node_modules/playwright" node tests/extra-mission-browser.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -61,6 +66,7 @@ jobs:
           path: |
             /tmp/imperium-chat-smoke.png
             /tmp/imperium-profile-messages.png
+            /tmp/imperium-extra-mission.png
           if-no-files-found: ignore
   publish:
     needs: verify
@@ -78,6 +84,7 @@ jobs:
           test -n "$SUPABASE_DB_URL"
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/chat-media.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/profile-messages.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f backend/extra-missions.sql
           version="$(psql "$SUPABASE_DB_URL" -Atqc 'select greatest(coalesce(max(version),0)+1,2) from public.app_updates')"
           echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
       - name: Package complete web assets
@@ -102,6 +109,6 @@ jobs:
           begin;
           update public.app_updates set active=false where active;
           insert into public.app_updates(version,version_name,package_url,active)
-          values(:'version'::integer,'Profile · wiadomości i powiadomienia',:'package_url',true);
+          values(:'version'::integer,'Dzisiaj wykonałem · dodatkowe misje',:'package_url',true);
           commit;
           SQL
