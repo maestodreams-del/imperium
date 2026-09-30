@@ -1,4 +1,4 @@
-name: Verify and publish IMPERIUM extra missions
+name: Verify and publish IMPERIUM task copying
 on:
   push:
     branches: [main]
@@ -28,6 +28,7 @@ jobs:
       - name: Check JavaScript and bundled assets
         run: |
           node --check app.js
+          node tests/task-copy-checks.cjs
           cmp app.js android-wrapper/app/src/main/assets/app.js
           cmp styles.css android-wrapper/app/src/main/assets/styles.css
           ! grep -E 'getUserMedia|chat-live-start' app.js
@@ -109,6 +110,6 @@ jobs:
           begin;
           update public.app_updates set active=false where active;
           insert into public.app_updates(version,version_name,package_url,active)
-          values(:'version'::integer,'Dzisiaj wykonałem · dodatkowe misje',:'package_url',true);
+          values(:'version'::integer,'Kopiuj zadania na dziś',:'package_url',true);
           commit;
           SQL
