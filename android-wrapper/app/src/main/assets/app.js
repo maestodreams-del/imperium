@@ -131,6 +131,14 @@ function currentUser(){
 function getUser(id){ return state.db?.users?.find(u=>u.id===id); }
 function getLoc(id){ return state.db?.locations?.find(l=>l.id===id); }
 function isAdmin(){ return currentUser()?.role==='admin'; }
+function reductionAccess(){
+  const ids=window.IMPERIUM_REDUCTION_ACCESS||{};
+  const id=currentUser()?.id;
+  return {locked:!!id&&id===(state.mode==='demo'?'u-zenon':ids.zenonId),owner:!!id&&id===(state.mode==='demo'?'u-admin':ids.ownerId)};
+}
+function reductionNotice(){
+  return `<section class="panel reduction-notice" role="status" style="padding:24px;margin-bottom:24px;border:2px solid #b42318"><h2>Komunikat kierownictwa</h2><p>W związku z drastycznym spadkiem zysków najwyższe kierownictwo podjęło decyzję o redukcji zatrudnienia.</p><p>Decyzja o zakończeniu współpracy dotyczy następujących osób:</p><ul><li>Nikolai Koshelyuk</li><li>Dmitry Sidorchuk</li><li>Vasiliy Abramenko</li><li>Nikita Odintsov</li><li>Vlad Ostapenko</li></ul><p>Ostatnim dniem naszej współpracy będzie <strong>31 października 2026 r.</strong></p><p>Dziękujemy za dotychczasową pracę i zaangażowanie.</p></section>`;
+}
 function isSalaryManager(){return state.mode==='demo'?currentUser()?.id==='u-admin':state.salaryManager;}
 function salaryMonthKey(){return state.salaryMonth+'-01';}
 function salaryWorker(){return isSalaryManager()?(state.db.users.find(u=>u.id===state.salaryWorkerId&&u.active)||state.db.users.find(u=>u.active&&u.id!==currentUser().id)||currentUser()):currentUser();}
@@ -467,6 +475,12 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
+  const reduction=reductionAccess();
+  if(reduction.locked){
+    state.tab='tasks';state.modal=null;stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);
+    app.innerHTML=`<div class="app aureus-shell light-shell"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>${esc(u.name)}</small></div></div></div></header><main class="content">${reductionNotice()}<p>Pozostałe funkcje aplikacji są zablokowane.</p></main><nav class="bottomnav"><div class="bottomnav-inner">${['Zadania','Obiekty','Przeglądy','Najem','Faktury','Ważne','Aktywność','Meldunek','Czat','Zespół','Profil','Moja pensja','Ustawienia'].map(label=>`<button class="navitem" disabled aria-disabled="true" style="opacity:.45"><span>${label}</span></button>`).join('')}</div></nav></div>`;
+    return;
+  }
   if(state.mode==='demo'){state.attendance=state.db.attendance||[];state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.invoiceSellers=state.db.invoiceSellers||[];state.invoiceDrafts=state.db.invoiceDrafts||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
   if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
   if(!isAdmin()&&state.tab==='invoices')state.tab='tasks';
@@ -477,7 +491,7 @@ function render(){
     <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>Zadania i zarządzanie</small></div></div>
     <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'Administrator':'Pracownik'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
   </div></header>
-  <main class="content">${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <main class="content">${reduction.owner&&state.tab==='tasks'?reductionNotice():''}${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
   <nav class="bottomnav"><div class="bottomnav-inner">${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','Ustawienia')}</div></nav>
   ${renderModal()}</div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');
@@ -1919,4 +1933,3 @@ function initSeason(){
 // Calm light interface: no decorative animation.
   init();
 })();
-
