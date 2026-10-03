@@ -1567,3 +1567,24 @@ input[type=checkbox],input[type=radio]{accent-color:#2563eb;width:18px;height:18
 :root{--au-bg:#f3f6fb!important;--au-panel:#fff!important;--au-panel2:#f7f9fc!important;--au-gold:#2563eb!important;--au-gold2:#1d4ed8!important;--au-bronze:#b8cbea!important;--au-text:#18283f!important;--au-muted:#53657c!important;--au-line:#dce4ef!important}
 .hero-card::after{display:none!important}.messenger-round{width:42px!important;height:42px!important;min-width:42px!important;background:#edf4ff!important;color:#2456aa!important;border-color:#d3e1fa!important}.messenger-count{background:#b42336!important;color:#fff!important}.messenger-round.has-unread{border:2px solid #2563eb!important}
 .aureus-shell .mission-card{background:#fff!important;border:1px solid #dce4ef!important;border-radius:18px!important;clip-path:none!important;box-shadow:0 5px 22px rgba(31,55,88,.045)!important}
+/* Interactive quest: scoped to avoid altering management screens. */
+.quest{max-width:780px;margin:0 auto;padding:8px 0 28px;color:#172b46}
+.quest-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
+.quest-heading h2{font-size:clamp(26px,5vw,38px);margin:6px 0;line-height:1.15}
+.quest-kicker{font-size:12px;letter-spacing:.08em;font-weight:700;color:#46638a}
+.quest-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+.quest-stats span{background:#e3ecf9;border:1px solid #c2d3eb;border-radius:10px;padding:10px 14px;font-size:14px}
+.quest-scene{background:#fff;border:1px solid #c2d3eb;border-left:5px solid #2b64ae;border-radius:16px;padding:clamp(20px,5vw,32px);box-shadow:0 8px 24px #163d7010}
+.quest-scene h3{font-size:24px;line-height:1.3;margin:10px 0 16px;color:#16385d}
+.quest-scene p{font-size:18px;line-height:1.8;margin:0;color:#243b55}
+.quest-choices{display:grid;gap:12px;margin:22px 0}
+.quest-choice{display:flex;flex-direction:column;gap:6px;text-align:left;padding:17px 20px;border:1px solid #adc5e5;border-radius:12px;background:#edf4ff;color:#143b70;font:inherit;font-size:16px;line-height:1.45;cursor:pointer;min-height:56px;white-space:normal}
+.quest-choice:hover:not(:disabled){background:#dceaff;border-color:#2b64ae}
+.quest-choice:focus-visible,.quest-details summary:focus-visible{outline:3px solid #2378e3;outline-offset:3px}
+.quest-choice:disabled{background:#f0f2f5;color:#637084;cursor:not-allowed;border-color:#d8dee7}
+.quest-choice small{font-size:14px;color:#637084}
+.quest-details{border-top:1px solid #cad7e8;padding:16px 0;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
+.quest-details summary{cursor:pointer;font-weight:650}
+.quest-details li{margin:8px 0}
+.quest-save{font-size:14px;line-height:1.5;color:#586b82}
+@media(max-width:480px){.quest-heading{align-items:flex-start}.quest-heading .ghost{padding:10px;font-size:14px}.quest-kicker{letter-spacing:.02em}.quest-scene p{font-size:17px}}
