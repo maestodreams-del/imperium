@@ -1602,3 +1602,10 @@ input[type=checkbox],input[type=radio]{accent-color:#2563eb;width:18px;height:18
 .quest-soon p{margin:0;line-height:1.6}
 .quest-scene .quest-consequence{font-size:15px;color:#46638a;margin-top:16px;border-top:1px solid #d8e1ec;padding-top:14px}
 @media(max-width:480px){.quest-heading{gap:10px}.quest-tools{min-width:106px}.quest-heading h2{font-size:25px}.quest-art{margin:-4px -4px 18px}}
+
+.work-locked .navitem-locked{opacity:.42;cursor:not-allowed;filter:grayscale(1)}
+.work-locked .navitem-locked:hover{background:transparent;transform:none}
+.work-lock-info{padding:24px;line-height:1.6}
+.work-lock-info h3{margin:0 0 10px}
+.notice-return{margin-bottom:20px}
+.work-locked .command-role{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

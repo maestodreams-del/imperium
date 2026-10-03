@@ -1,4 +1,4 @@
-name: Publish Aurelia chapter 1 · 125 scenes · RU/PL
+name: Publish universal notice and work section lock
 on:
   push:
     branches: [main]
@@ -18,9 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client zip
-      - name: Resolve exact notice audience
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      - name: Verify universal notice and app bundle
         run: |
           set -euo pipefail
           node --check app.js
@@ -30,19 +28,12 @@ jobs:
           node tests/quest-checks.cjs
           npm install --prefix "$RUNNER_TEMP/quest-test" jsdom@30.1.1 --no-audit --no-fund
           NODE_PATH="$RUNNER_TEMP/quest-test/node_modules" node tests/quest-dom.cjs
+          NODE_PATH="$RUNNER_TEMP/quest-test/node_modules" node tests/work-lock-dom.cjs
           cmp app.js android-wrapper/app/src/main/assets/app.js
           cmp game.js android-wrapper/app/src/main/assets/game.js
           cmp quest-chapter.js android-wrapper/app/src/main/assets/quest-chapter.js
           cmp quest-sketch.js android-wrapper/app/src/main/assets/quest-sketch.js
           cmp index.html android-wrapper/app/src/main/assets/index.html
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          do $$ begin
-            if (select count(*) from public.profiles where active and full_name ~* '^(Zenon|Zenek|Зенон)( |$)') <> 1 then raise exception 'Zenon account is ambiguous'; end if;
-            if (select count(*) from public.salary_managers m join public.profiles p on p.id=m.profile_id where p.active) <> 1 then raise exception 'Owner account is ambiguous'; end if;
-            if exists(select 1 from public.salary_managers m join public.profiles p on p.id=m.profile_id where p.active and p.full_name ~* '^(Zenon|Zenek|Зенон)( |$)') then raise exception 'Owner and Zenon must differ'; end if;
-          end $$;
-          SQL
-          psql "$SUPABASE_DB_URL" -Atqc "select 'window.IMPERIUM_REDUCTION_ACCESS=' || json_build_object('zenonId',(select id from public.profiles where active and full_name ~* '^(Zenon|Zenek|Зенон)( |$)'), 'ownerId',(select m.profile_id from public.salary_managers m join public.profiles p on p.id=m.profile_id where p.active))::text || ';'" >> android-wrapper/app/src/main/assets/config.js
       - name: Migrate and allocate update number
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -92,6 +83,6 @@ jobs:
           begin;
           update public.app_updates set active=false where active=true;
           insert into public.app_updates(version,version_name,package_url,active)
-          values (:'version'::integer, 'Aurelia · Rozdział 1 · 125 scen · Русский / Polski', :'package_url', true);
+          values (:'version'::integer, 'Komunikat dla wszystkich · blokada sekcji służbowych · gra dostępna', :'package_url', true);
           commit;
           SQL

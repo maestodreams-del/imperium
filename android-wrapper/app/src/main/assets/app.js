@@ -2,6 +2,7 @@
 'use strict';
 
 const BASE_CFG = window.IMPERIUM_CONFIG || {};
+const WORK_SECTIONS_LOCKED = true;
 const app = document.getElementById('app');
 const fileInput = document.getElementById('file-input');
 const DB_KEY = 'imperium_db_v2';
@@ -132,9 +133,8 @@ function getUser(id){ return state.db?.users?.find(u=>u.id===id); }
 function getLoc(id){ return state.db?.locations?.find(l=>l.id===id); }
 function isAdmin(){ return currentUser()?.role==='admin'; }
 function reductionAccess(){
-  const ids=window.IMPERIUM_REDUCTION_ACCESS||{};
-  const id=currentUser()?.id;
-  return {recipient:!!id&&id===(state.mode==='demo'?'u-zenon':ids.zenonId),owner:!!id&&id===(state.mode==='demo'?'u-admin':ids.ownerId)};
+  const signedIn=!!currentUser();
+  return {recipient:signedIn,locked:WORK_SECTIONS_LOCKED&&signedIn};
 }
 function reductionNotice(){
   return `<section class="panel reduction-notice" role="status" style="padding:24px;margin-bottom:24px;border:2px solid #b42318"><h2>Komunikat kierownictwa</h2><p>W związku z drastycznym spadkiem zysków najwyższe kierownictwo podjęło decyzję o redukcji zatrudnienia.</p><p>Decyzja o zakończeniu współpracy dotyczy następujących osób:</p><ul><li>Nikolai Koshelyuk</li><li>Dmitry Sidorchuk</li><li>Vasiliy Abramenko</li><li>Nikita Odintsov</li><li>Vlad Ostapenko</li></ul><p>Ostatnim dniem naszej współpracy będzie <strong>31 października 2026 r.</strong></p><p>Dziękujemy za dotychczasową pracę i zaangażowanie.</p></section>`;
@@ -263,6 +263,11 @@ async function refreshSession(){
   const x=await r.json(); state.auth=x; if(!state.auth.expires_at&&x.expires_in)state.auth.expires_at=Math.floor(Date.now()/1000)+x.expires_in; localStorage.setItem(AUTH_KEY,JSON.stringify(state.auth));
 }
 async function cloudFetch(path,{method='GET',body=null,headers={},raw=false,auth=true}={}){
+  if(WORK_SECTIONS_LOCKED&&state.auth?.access_token&&!path.startsWith('/auth/v1/')){
+    const accountRead=method==='GET'&&(path.startsWith('/rest/v1/profiles?')||path.startsWith('/rest/v1/app_updates?'));
+    const bootstrap=method==='POST'&&path==='/rest/v1/rpc/bootstrap_first_admin';
+    if(!accountRead&&!bootstrap)throw new Error('Sekcje służbowe są zablokowane przez kierownictwo.');
+  }
   const c=cloudConfig(); if(!c) throw new Error('Brak konfiguracji chmury.');
   if(auth) await refreshSession();
   const h={apikey:c.key,...headers};
@@ -336,8 +341,19 @@ function mapTaskRow(t,comments,atts){
 }
 function mapAtt(a){return {id:a.id,name:a.file_name,size:Number(a.size_bytes||0),type:a.mime_type||'application/octet-stream',path:a.storage_path,kind:a.kind,uploadedBy:a.uploaded_by,createdAt:a.created_at};}
 function mapRental(r){return {id:r.id,locationId:r.location_id,roomId:r.room_id||null,contractor:r.contractor,nip:r.nip||'',contactPerson:r.contact_person||'',phone:r.phone||'',email:r.email||'',registeredAddress:r.registered_address||'',premisesAddress:r.premises_address||'',premisesNumber:r.premises_number||'',paymentStatus:r.payment_status||'',startsOn:r.starts_on,endsOn:r.ends_on,indefinite:r.indefinite,areaSqm:Number(r.area_sqm),priceSqmNet:Number(r.price_sqm_net),priceSqmGross:Number(r.price_sqm_gross),parkingNet:Number(r.parking_net),parkingGross:Number(r.parking_gross),internetNet:Number(r.internet_net),internetGross:Number(r.internet_gross),cleaningNet:Number(r.cleaning_net||0),cleaningGross:Number(r.cleaning_gross||0)};}
+async function loadRestrictedAccount({silent=false}={}){
+  if(!silent)setLoading(true,'Logowanie…');
+  try{
+    const rows=await pgGet('profiles?select=id,full_name,role,active&id=eq.'+encodeURIComponent(state.auth.user.id));
+    state.db={version:2,users:rows.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:[]})),locations:[],tasks:[],events:[],coinTransactions:[]};
+    state.cloudError='';state.loading=false;
+    if(!silent)checkImperiumUpdate().catch(()=>{});
+    render();
+  }catch(e){state.loading=false;state.cloudError=e.message;localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;render();toast('Nie udało się wczytać konta: '+e.message);}
+}
 async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
+  if(WORK_SECTIONS_LOCKED)return loadRestrictedAccount({silent});
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
     if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
@@ -455,7 +471,7 @@ function imperialIcon(id){
     profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4.2 2.8-7 7-7s7 2.8 7 7"/></svg>',salary:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M16 12h5v5h-5z"/><circle cx="17" cy="14.5" r=".6"/></svg>',settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
   };return p[id]||'';
 }
-function nav(id,label,extra=''){return `<button class="navitem ${state.tab===id?'active':''} ${extra}" data-tab="${id}"><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
+function nav(id,label,extra=''){const locked=reductionAccess().locked&&!['notice','game'].includes(id);return `<button class="navitem ${state.tab===id?'active':''} ${extra} ${locked?'navitem-locked':''}" data-tab="${id}" ${locked?'disabled aria-disabled="true" title="Sekcja zablokowana przez kierownictwo"':''}><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
 function chip(id,label){return `<button class="chip ${state.filter===id?'active':''}" data-filter="${id}">${label}</button>`;}
 function render(){
   if(state.loading)return;
@@ -477,6 +493,7 @@ function render(){
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
   const reduction=reductionAccess();
+  if(reduction.locked)return renderRestrictedApp(u);
   if(state.mode==='demo'){state.attendance=state.db.attendance||[];state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.invoiceSellers=state.db.invoiceSellers||[];state.invoiceDrafts=state.db.invoiceDrafts||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
   if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
   if(!isAdmin()&&state.tab==='invoices')state.tab='tasks';
@@ -493,6 +510,24 @@ function render(){
   const bottomNav=app.querySelector('.bottomnav-inner');
   if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
   bind();
+  if(state.tab==='game')window.ImperiumQuest?.mount(document.getElementById('imperium-quest'),state.mode+':'+u.id);
+}
+// All authenticated roles see the same notice and the same restricted navigation.
+// Authentication, app updates and the previously requested game remain available.
+function renderRestrictedApp(u){
+  if(!['notice','game'].includes(state.tab))state.tab='notice';
+  state.modal=null;
+  if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}
+  state.invoicePdfBlob=null;selectedFiles=[];fileInput.value='';
+  stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);
+  if(profileMessageTimer){clearInterval(profileMessageTimer);profileMessageTimer=null;}
+  app.innerHTML=`<div class="app aureus-shell light-shell work-locked">
+  <header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>Komunikat kierownictwa</small></div></div><div class="top-actions"><span class="command-role">${esc(u.name)}</span><button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div></div></header>
+  <main class="content">${state.tab==='notice'?reductionNotice()+'<section class="panel work-lock-info"><h3>Sekcje służbowe są zablokowane</h3><p>Blokada obowiązuje wszystkie konta, również administratorów. Dostępna pozostaje gra.</p><button class="goldbtn" data-tab="game">Przejdź do gry</button></section>':'<button class="ghost notice-return" data-tab="notice">Komunikat kierownictwa</button><div id="imperium-quest"></div>'}</main>
+  <nav class="bottomnav"><div class="bottomnav-inner">${nav('notice','Komunikat')}${nav('game','Gra')}${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${nav('rentals','Najem')}${nav('invoices','Faktury')}${nav('important','Ważne')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','Ustawienia')}</div></nav></div>`;
+  const bottomNav=app.querySelector('.bottomnav-inner');if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
+  app.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(b.disabled||!['notice','game'].includes(b.dataset.tab))return;state.tab=b.dataset.tab;render();});
+  document.getElementById('logout').onclick=()=>state.mode==='cloud'?signOutCloud():demoLogout();
   if(state.tab==='game')window.ImperiumQuest?.mount(document.getElementById('imperium-quest'),state.mode+':'+u.id);
 }
 async function loadSalaryMonth({refresh=false}={}){

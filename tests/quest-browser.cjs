@@ -12,12 +12,10 @@ const {chromium}=require('playwright');
   for(const script of ['quest-chapter.js','quest-sketch.js','game.js'])await page.addScriptTag({content:fs.readFileSync(script,'utf8')});
   await page.addScriptTag({content:fs.readFileSync('app.js','utf8')});
   await page.locator('.light-shell').waitFor();
-  assert.equal(await page.locator('.bottomnav button:disabled').count(),0);
-  for(const tab of ['locations','inspections','rentals','activity','attendance','team','profile','salary','settings','tasks']){
-   await page.locator(`[data-tab="${tab}"]`).click();
-   assert.equal(await page.locator(`[data-tab="${tab}"].active`).count(),1,tab);
-  }
-  await page.locator('[data-tab="game"]').click();
+  assert.equal(await page.locator('.bottomnav button:disabled').count(),13);
+  assert.equal(await page.locator('.reduction-notice').count(),1);
+  for(const tab of ['tasks','locations','inspections','rentals','invoices','important','activity','attendance','chat','team','profile','salary','settings'])assert.equal(await page.locator(`[data-tab="${tab}"]`).isDisabled(),true,tab);
+  await page.locator('.bottomnav [data-tab="game"]').click();
   await page.locator('button[data-quest-language="pl"]').click();
   assert.equal(await page.locator('.quest-scene h3').innerText(),'Przebudzenie przy Granicy');
   await page.locator('[data-quest-choice="0"]').click();
@@ -26,15 +24,15 @@ const {chromium}=require('playwright');
   assert.equal(await page.locator('.quest-scene h3').innerText(),'Имя без воспоминаний');
   assert.equal(await page.locator('.quest-art svg').count(),1);
   await page.locator('select[data-quest-language]').selectOption('pl');
-  await page.locator('[data-tab="tasks"]').click();await page.locator('[data-tab="game"]').click();
+  await page.locator('[data-tab="notice"]').first().click();await page.locator('.bottomnav [data-tab="game"]').click();
   assert.equal(await page.locator('.quest-scene h3').innerText(),'Imię bez wspomnienia');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
   const reached=await page.evaluate(()=>JSON.parse(localStorage.getItem('imperium_quest_v1:demo:u-zenon')).node);assert.equal(reached,'names');
   await page.screenshot({path:`/tmp/imperium-quest-${width}.png`,fullPage:true});
-  await page.locator('#logout').click();await page.locator('#login-admin').click();await page.locator('[data-tab="game"]').click();
+  await page.locator('#logout').click();await page.locator('#login-admin').click();await page.locator('.bottomnav [data-tab="game"]').click();
   await page.locator('button[data-quest-language="pl"]').click();
   assert.equal(await page.locator('.quest-scene h3').innerText(),'Przebudzenie przy Granicy','Different account has its own game');
   assert.deepEqual(errors,[]);await page.close();
  }
- await browser.close();console.log('Mobile/desktop: Zenon navigation unlocked; quest choices and return-to-tab persistence; per-account separation; no runtime errors.');
+ await browser.close();console.log('Mobile/desktop: universal notice and work navigation locked; quest choices and return-to-tab persistence; per-account separation; no runtime errors.');
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -1,4 +1,4 @@
-const CACHE='imperium-chapter1-125-ru-pl-20261003';
+const CACHE='imperium-universal-notice-work-lock-20261003';
 const ASSETS=['./','./index.html','./styles.css','./config.js','./app.js','./game.js','./quest-chapter.js','./quest-sketch.js','./manifest.webmanifest','./icons/icon.svg'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
