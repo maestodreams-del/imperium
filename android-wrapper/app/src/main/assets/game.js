@@ -2,6 +2,7 @@
 (function(root){
 'use strict';
 const choice=(label,next,effect={})=>({label,next,...effect});
+const chapter=typeof module==='object'&&module.exports?require('./quest-chapter.js'):root.ImperiumChapter;
 const scenes={
   wake:{title:'Przebudzenie przy Granicy',text:'Budzisz się na mokrym mchu. Nie pamiętasz swojego imienia. Nad tobą pochylają się trzy istoty: przezroczysty lis, kamienny olbrzym i mała postać z oczami jak latarnie. Na ich pancerzach widnieje znak Aurelii. Za drzewami Granica pożera horyzont. Nie wiesz jeszcze, czy przybyli cię uratować.',choices:[choice('Zapytaj, gdzie jesteś','names',{trust:1}),choice('Zerwij się i uciekaj','run',{energy:-1}),choice('Udawaj, że nadal śpisz','listen')]},
   names:{title:'Imię bez wspomnienia',text:'„To Pogranicze Aurelii” — mówi latarnik. „Jestem zwiadowczym dronem. Lis jest przewodnikiem holograficznym, a olbrzym konstruktem ratunkowym Rona. Znaleźliśmy cię obok pęknięcia Granicy”. Lis dotyka twojej dłoni. Na skórze pojawia się znak pękniętego koła. Olbrzym natychmiast cofa się o krok.',choices:[choice('Pokaż znak wszystkim','mark',{trust:1}),choice('Schowaj dłoń i rozejrzyj się','clearing')]},
@@ -48,23 +49,141 @@ const scenes={
   endingStay:{title:'Imię, które wybierzesz',text:'Znak znika z dłoni. Brama zamyka się razem z ostatnią falą ciemności. Pozostajesz w dolinie. Indigo pomaga osadzie odbudować domy. Przyjaciele nie wybierają ci imienia: czekają, aż zrobisz to sam. Po raz pierwszy twoja przyszłość należy do ciebie.',ending:true},
   endingHome:{title:'Powrót z pytaniem',text:'Rick otwiera dla ciebie osobny portal. Budzisz się we własnym łóżku. Na dłoni nie ma znaku. W kieszeni znajdujesz jednak mały kawałek szkła, ciepły jak światło latarnika. Nie wiesz, co stało się z doliną. Teraz pamiętasz jej mieszkańców i Radę Aurelii — i swoją decyzję.',ending:true}
 };
+// Old terminal IDs remain valid so existing saved games continue into the chapter.
+const checkpoints={
+ endingTogether:['Wspólna praca','Rick otwiera portal ratunkowy, Ron stabilizuje Granicę, a towarzysze utrzymują regulatory. To pierwszy sukces. Aurelia już wzywa was dalej.'],
+ endingEngineer:['Działający most','Mechanizm utrzymuje regulatory. Zapisujesz instrukcję dla kolejnych ratowników. Transport Aurelii czeka; przed wami dalsza droga.'],
+ endingSeal:['Ocalona dolina','Szczelina gaśnie, mieszkańcy są bezpieczni. Rick przygotowuje osobny portal powrotny. Zamknięcie starej drogi nie kończy podróży.'],
+ endingStay:['Imię jeszcze przed tobą','Znak przygasa, lecz nie znika. Indigo pomaga mieszkańcom. Zostajesz z zespołem; swoje imię jeszcze przypomnisz.'],
+ endingHome:['Powrót odłożony','Rick bada przejście i rozpoznaje pętlę pamięci za obrazem twojego pokoju. Zamyka niebezpieczny portal i proponuje bezpieczną drogę do Aurelii.']
+};
+for(const [id,[title,text]] of Object.entries(checkpoints))scenes[id]={title,text,choices:[choice('Kontynuuj z zespołem','chapter01')]};
+const alternatives=`
+Zapytaj Ricka o trasę|Спросить Рика о маршруте
+Porozmawiaj ze starszym pasażerem|Поговорить с пожилым пассажиром
+Pomóż latarnikowi utrzymać światło|Помочь фонарщику удержать свет
+Poproś Rona o plan miasta|Попросить у Рона план города
+Przenieś bagaże ocalonych|Перенести вещи спасённых
+Zapytaj o ochronę danych|Узнать о защите данных
+Najpierw sprawdź dziedziniec|Сначала осмотреть двор
+Zapisz dokładny kształt znaku|Зарисовать форму знака
+Sprawdź urządzenie z Ronem|Проверить прибор с Роном
+Odłącz toster od zasilania|Отключить тостер от питания
+Porównaj sygnał z mapą|Сравнить сигнал с картой
+Zapytaj Starszego o jego pracę|Расспросить Старшего о работе
+Poproś o próbę pod nadzorem|Попросить пробу под наблюдением
+Sprawdź zabezpieczenia portalu|Проверить защиту портала
+Przejrzyj ostatnią klatkę nagrania|Изучить последний кадр записи
+Zaznacz wątpliwości w raporcie|Отметить сомнения в докладе
+Zabierz ze sobą latarnika|Взять фонарщика с собой
+Obejrzyj stanowisko świadka|Осмотреть место свидетеля
+Poproś Ariego o ocenę ryzyka|Попросить Ари оценить риск
+Zapytaj Indigo o wolę mieszkańców|Спросить Индиго о воле жителей
+Zaznacz stabilne punkty na mapie|Отметить устойчивые точки на карте
+Zapytaj Severusa o zapas eliksirów|Спросить Северуса о запасе эликсиров
+Poproś Weskera o izolującą opaskę|Попросить у Вескера защитную повязку
+Zaproponuj dodatkowy transport medyczny|Предложить дополнительный медицинский транспорт
+Sprawdź zapasowy regulator z Ronem|Проверить запасной регулятор с Роном
+Poproś Ricka o drogę awaryjną|Попросить Рика подготовить запасной путь
+Ustal znak dla patrolu|Договориться о сигнале для патруля
+Zapytaj Eliasa o granice osłony|Узнать у Элиаса пределы защиты
+Poproś o zapis decyzji Rady|Попросить записать решение Совета
+Weź dodatkowy zestaw narzędzi|Взять дополнительный набор инструментов
+Sprawdź łączność przed przejściem|Проверить связь перед переходом
+Zbadaj drugi cień|Изучить вторую тень
+Przedstaw się Lirze|Представиться Лире
+Pomóż przygotować schron|Помочь подготовить убежище
+Wysłuchaj dziecka do końca|Выслушать ребёнка до конца
+Zapisz znak, nie dotykając go|Зарисовать знак, не касаясь его
+Poszukaj pozostawionych wskazówek|Поискать оставленные подсказки
+Porównaj zegar z własnym czasem|Сверить часы со своим временем
+Poproś Lirę o bezpieczny skrót|Попросить Лиру показать безопасный путь
+Sprawdź spis na okładce|Проверить оглавление
+Porównaj plan ze znakiem dłoni|Сравнить план со знаком на ладони
+Poszukaj śladów wyrwania strony|Поискать следы вырванной страницы
+Zawołaj Starszego do pracowni|Позвать Старшего в мастерскую
+Przekaż ostrzeżenie przez radio|Передать предупреждение по рации
+Podaj strażnikowi wodę|Дать стражу воды
+Pomóż lekarzom rozstawić osłony|Помочь врачам установить защиту
+Poproś o równoległą ewakuację|Попросить начать параллельную эвакуацию
+Przygotuj asekurację pod wieżą|Подготовить страховку под башней
+Poproś patrol o zabezpieczenie podestu|Попросить патруль укрепить настил
+Zapisz odczyt pierwszej kotwy|Записать показания первого якоря
+Sprawdź powietrze przed zejściem|Проверить воздух перед спуском
+Zaznacz suchą drogę odwrotu|Отметить сухой путь назад
+Oświetl wodę z bezpiecznej odległości|Осветить воду с безопасного расстояния
+Poproś Rona o zdalną diagnozę|Попросить Рона провести диагностику
+Wyłącz przeciążony obwód|Отключить перегруженную цепь
+Przekaż odczyt Thomasowi|Передать показания Томасу
+Sprawdź stan schronu|Проверить состояние убежища
+Poproś Lirę o rozmowę ze strażą|Попросить Лиру поговорить со стражей
+Zapytaj operatora, czego się boi|Спросить оператора, чего он боится
+Pokaż zapis ustaleń Rady|Показать запись решения Совета
+Sprawdź mocowanie kotwy|Проверить крепление якоря
+Pomóż Starszemu utrzymać narzędzia|Помочь Старшему удержать инструменты
+Wyprowadź ludzi ze strefy pęknięcia|Вывести людей из зоны трещины
+Poproś Weskera o odczyt znaku|Попросить Вескера исследовать знак
+Potwierdź trzy odczyty przez radio|Подтвердить три показания по рации
+Sprawdź, czy cisza nie jest iluzją|Проверить, не является ли тишина иллюзией
+Pomóż Eliasowi osłonić odwrót|Помочь Элиасу прикрыть отступление
+Zapisz położenie ogranicznika|Записать положение ограничителя
+Poproś o potwierdzenie ze szpitala|Попросить подтверждение из больницы
+Wysłuchaj decyzji mieszkańców|Выслушать решение жителей
+Zostaw Lirze kanał łączności|Оставить Лире канал связи
+Pomóż ostatnim pasażerom|Помочь последним пассажирам
+Dodaj do raportu własne błędy|Добавить в доклад свои ошибки
+Zapytaj o odbudowę miasta|Узнать о восстановлении города
+Podziękuj Starszemu za pomoc|Поблагодарить Старшего за помощь
+Zapisz wspomnienia przed snem|Записать воспоминания перед сном
+Porównaj zapis z archiwum|Сравнить запись с архивом
+Pokaż pieczęć Indigo|Показать печать Индиго
+Poproś Ricka o sprawdzenie źródła|Попросить Рика проверить источник
+Zabierz ze sobą dziennik|Взять дневник с собой
+`.trim().split('\n').map(x=>x.split('|'));
+chapter.rows.forEach((r,i)=>{
+ const id='chapter'+String(i+1).padStart(2,'0'),next='chapter'+String(i+2).padStart(2,'0');
+ const last=i===chapter.rows.length-1;
+ const effect={trust:1};
+ if([6,9,22,75].includes(i))effect.energy=1;
+ if(i===29)effect.add='narzędzia';
+ const a=alternatives[i];
+ scenes[id]={title:r[0],text:r[2],ru:[r[1],r[3]],choices:last?[]:[{...choice(r[4],next,effect),ru:r[5]},{...choice(a[0],next,{energy:i%5===0?-1:0,trust:i%5===0?0:1}),ru:a[1]}],chapterComplete:last};
+ // Optional detours: the short route skips the next scene, but forfeits its aid.
+ if([1,9,12,31,36,39,50,72].includes(i))scenes[id].choices.push({label:'Idź dalej krótszą drogą',ru:'Продолжить коротким путём',next:'chapter'+String(i+3).padStart(2,'0'),energy:-1});
+});
+const ids=Object.keys(scenes);
+ids.forEach((id,i)=>{scenes[id].number=i+1;scenes[id].art=i;});
+const ui={
+ pl:{kicker:'IMPERIUM · OPOWIEŚĆ INTERAKTYWNA',title:'Aurelia: Pogranicze',chapter:'Rozdział 1',reset:'Od początku',energy:'Siły',trust:'Zaufanie',decisions:'Decyzje',scene:'Scena',inventory:'Ekwipunek',empty:'Na razie nic nie masz.',journal:'Dziennik decyzji',newStory:'Twoja historia dopiero się zaczyna.',saved:'Postęp zapisywany na tym urządzeniu, osobno dla Twojego konta.',failed:'Nie udało się zapisać postępu. Po zamknięciu możesz stracić tę sesję.',confirm:'Rozpocząć od początku? Obecny postęp zostanie zastąpiony.',soon:'Aktualizacja wkrótce',wait:'To przerwa przed dalszą podróżą. Zachowaj zapis, aby wrócić do kolejnego rozdziału.',needs:'Potrzebujesz: ',light:'Potrzebujesz kryształu lub pryzmatu',knowledge:'Potrzebujesz pamięci lub instrukcji',sketch:'Szkic sceny',careful:'Dzięki waszemu zaufaniu drużyna przygotowuje dodatkową osłonę.',alone:'Drużyna ostrożnie sprawdza połączenie przed następnym krokiem.'},
+ ru:{kicker:'IMPERIUM · ИНТЕРАКТИВНАЯ ИСТОРИЯ',title:'Аурелия: Пограничье',chapter:'Глава 1',reset:'С начала',energy:'Силы',trust:'Доверие',decisions:'Решения',scene:'Сцена',inventory:'Инвентарь',empty:'Пока здесь пусто.',journal:'Дневник решений',newStory:'Твоя история только начинается.',saved:'Прогресс сохраняется на этом устройстве отдельно для твоего аккаунта.',failed:'Не удалось сохранить прогресс. После закрытия эта сессия может быть потеряна.',confirm:'Начать с начала? Текущий прогресс будет заменён.',soon:'Обновление скоро',wait:'Это пауза перед дальнейшим путешествием. Сохрани прогресс, чтобы вернуться к следующей главе.',needs:'Нужно: ',light:'Нужен кристалл или призма',knowledge:'Нужны воспоминания или инструкция',sketch:'Зарисовка сцены',careful:'Благодаря вашему доверию команда готовит дополнительную защиту.',alone:'Команда осторожно проверяет связь перед следующим шагом.'}
+};
+const itemsRU={'podsłuch':'подслушанный разговор','obietnica':'обещание','nóż':'нож','mapa':'карта','woda':'вода','tryb':'шестерня','kryształ':'кристалл','latarnia':'фонарь','pamięć':'воспоминание','instrukcja':'инструкция','pryzmat':'призма','wspólna droga':'общий путь','przewód':'провод','iluzja':'сведения об иллюзии','narzędzia':'инструменты','uchodźcy':'сведения о беженцах','opaska':'повязка','ewakuacja':'план эвакуации','osłona':'защита','regulator':'регулятор'};
+function localized(id,lang){const n=scenes[id],r=n.ru||chapter.ru[id];return {...n,title:lang==='ru'?r[0]:n.title,text:lang==='ru'?r[1]:n.text,choices:(n.choices||[]).map((c,i)=>({...c,label:lang==='ru'?(c.ru||r[2][i]):c.label}))};}
 function fresh(){return {version:1,node:'wake',energy:5,trust:0,items:[],history:[]};}
 function available(s,c){return (!c.requires||s.items.includes(c.requires))&&(!c.minTrust||s.trust>=c.minTrust)&&(!c.minEnergy||s.energy>=c.minEnergy)&&(!c.needsLight||s.items.some(x=>['kryształ','pryzmat'].includes(x)))&&(!c.needsKnowledge||s.items.some(x=>['pamięć','instrukcja'].includes(x)));}
-function advance(s,index){const c=scenes[s.node]?.choices?.[index];if(!c||!available(s,c))return s;return {...s,node:c.next,energy:Math.max(0,Math.min(7,s.energy+(c.energy||0))),trust:Math.max(0,s.trust+(c.trust||0)),items:[...new Set(s.items.filter(x=>x!==c.remove).concat(c.add?[c.add]:[]))],history:s.history.concat({title:scenes[s.node].title,choice:c.label}).slice(-100)};}
+function advance(s,index){const c=scenes[s.node]?.choices?.[index];if(!c||!available(s,c))return s;return {...s,node:c.next,energy:Math.max(0,Math.min(7,s.energy+(c.energy||0))),trust:Math.max(0,s.trust+(c.trust||0)),items:[...new Set(s.items.filter(x=>x!==c.remove).concat(c.add?[c.add]:[]))],history:s.history.concat({node:s.node,index,title:scenes[s.node].title,choice:c.label}).slice(-500)};}
 function valid(s){return s?.version===1&&!!scenes[s.node]&&Number.isInteger(s.energy)&&s.energy>=0&&s.energy<=7&&Number.isInteger(s.trust)&&s.trust>=0&&Array.isArray(s.items)&&s.items.every(x=>typeof x==='string')&&Array.isArray(s.history)&&s.history.every(x=>typeof x.title==='string'&&typeof x.choice==='string');}
 const esc=v=>String(v).replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
-function reason(s,c){if(c.requires&&!s.items.includes(c.requires))return 'Potrzebujesz: '+c.requires;if(c.minTrust&&s.trust<c.minTrust)return 'Potrzebujesz zaufania: '+c.minTrust;if(c.minEnergy&&s.energy<c.minEnergy)return 'Potrzebujesz sił: '+c.minEnergy;if(c.needsLight&&!s.items.some(x=>['kryształ','pryzmat'].includes(x)))return 'Potrzebujesz kryształu lub pryzmatu';return 'Potrzebujesz pamięci lub instrukcji';}
+function reason(s,c,lang){const t=ui[lang];if(c.requires&&!s.items.includes(c.requires))return t.needs+(lang==='ru'?itemsRU[c.requires]:c.requires);if(c.minTrust&&s.trust<c.minTrust)return t.needs+t.trust+' '+c.minTrust;if(c.minEnergy&&s.energy<c.minEnergy)return t.needs+t.energy+' '+c.minEnergy;if(c.needsLight&&!s.items.some(x=>['kryształ','pryzmat'].includes(x)))return t.light;return t.knowledge;}
+function historyEntry(x,lang){const id=scenes[x.node]?x.node:ids.find(id=>scenes[id].title===x.title);if(!id)return [lang==='ru'?'Предыдущее решение':x.title,lang==='ru'?'Записано до обновления':x.choice];const n=localized(id,lang),index=Number.isInteger(x.index)?x.index:(scenes[id].choices||[]).findIndex(c=>c.label===x.choice);return [n.title,n.choices[index]?.label||(lang==='ru'?'Решение сохранено':x.choice)];}
 function mount(container,account){
-  if(!container||!account)return;
-  const key='imperium_quest_v1:'+account;let s=fresh(),saving=true;
-  try{const stored=JSON.parse(root.localStorage.getItem(key));if(valid(stored))s=stored;}catch(e){saving=false;}
-  function save(){try{root.localStorage.setItem(key,JSON.stringify(s));saving=true;}catch(e){saving=false;}}
-  function draw(){const n=scenes[s.node];container.innerHTML=`<section class="quest"><header class="quest-heading"><div><span class="quest-kicker">IMPERIUM · OPOWIEŚĆ INTERAKTYWNA</span><h2>Aurelia: Pogranicze</h2></div><button class="ghost" data-quest-reset>Od początku</button></header><div class="quest-stats"><span>Siły <b>${s.energy}/7</b></span><span>Zaufanie <b>${s.trust}</b></span><span>Decyzje <b>${s.history.length}</b></span></div><article class="quest-scene" aria-live="polite"><span class="quest-kicker">${n.ending?'ZAKOŃCZENIE':'TWOJA HISTORIA'}</span><h3 tabindex="-1">${esc(n.title)}</h3><p>${esc(n.text)}</p></article><div class="quest-choices">${(n.choices||[]).map((c,i)=>`<button class="quest-choice" data-quest-choice="${i}" ${available(s,c)?'':'disabled'}><span>${esc(c.label)}</span>${available(s,c)?'':`<small>${esc(reason(s,c))}</small>`}</button>`).join('')}${n.ending?'<button class="quest-choice" data-quest-reset>Zagraj ponownie i wybierz inną drogę</button>':''}</div><details class="quest-details"><summary>Ekwipunek (${s.items.length})</summary><p>${s.items.length?s.items.map(esc).join(' · '):'Na razie nic nie masz.'}</p></details><details class="quest-details"><summary>Dziennik decyzji</summary>${s.history.length?`<ol>${s.history.map(x=>`<li><b>${esc(x.title)}</b> — ${esc(x.choice)}</li>`).join('')}</ol>`:'<p>Twoja historia dopiero się zaczyna.</p>'}</details><p class="quest-save">${saving?'Postęp zapisywany na tym urządzeniu, osobno dla Twojego konta.':'Nie udało się zapisać postępu. Możesz grać, ale po zamknięciu stracisz tę sesję.'}</p></section>`;
-    container.querySelectorAll('[data-quest-choice]').forEach(b=>b.onclick=()=>{s=advance(s,Number(b.dataset.questChoice));save();draw();container.querySelector('h3').focus({preventScroll:true});container.scrollIntoView({block:'start',behavior:'auto'});});
-    container.querySelectorAll('[data-quest-reset]').forEach(b=>b.onclick=()=>{if(!root.confirm('Rozpocząć od początku? Obecny postęp zostanie zastąpiony.'))return;s=fresh();save();draw();});
-  }draw();
+ if(!container||!account)return;
+ const key='imperium_quest_v1:'+account,langKey=key+':language';let s=fresh(),saving=true,lang=null;
+ try{const stored=JSON.parse(root.localStorage.getItem(key));if(valid(stored))s=stored;const l=root.localStorage.getItem(langKey);if(l==='ru'||l==='pl')lang=l;}catch(e){saving=false;}
+ function save(){try{root.localStorage.setItem(key,JSON.stringify(s));root.localStorage.setItem(langKey,lang);saving=true;}catch(e){saving=false;}}
+ function choose(l){lang=l;save();draw();}
+ function draw(){
+  container.setAttribute('lang',lang||'ru');
+  if(!lang){container.innerHTML='<section class="quest quest-language"><span class="quest-kicker">AURELIA · АУРЕЛИЯ</span><h2>Выбери язык / Wybierz język</h2><p>Глава 1 · 125 сцен<br>Rozdział 1 · 125 scen</p><div class="quest-choices"><button class="quest-choice" data-quest-language="ru">Русский</button><button class="quest-choice" data-quest-language="pl">Polski</button></div></section>';container.querySelectorAll('[data-quest-language]').forEach(b=>b.onclick=()=>choose(b.dataset.questLanguage));return;}
+  const n=localized(s.node,lang),t=ui[lang];
+  const consequence=['chapter30','chapter65','chapter68'].includes(s.node)?`<p class="quest-consequence">${esc(s.trust>=12?t.careful:t.alone)}</p>`:'';
+  container.innerHTML=`<section class="quest"><header class="quest-heading"><div><span class="quest-kicker">${t.kicker}</span><h2>${t.title}</h2><p>${t.chapter} · ${t.scene} ${n.number}/125</p></div><div class="quest-tools"><label class="quest-language-label">Язык / Język<select data-quest-language aria-label="Язык / Język"><option value="ru" ${lang==='ru'?'selected':''}>Русский</option><option value="pl" ${lang==='pl'?'selected':''}>Polski</option></select></label><button class="ghost" data-quest-reset>${t.reset}</button></div></header><div class="quest-stats"><span>${t.energy} <b>${s.energy}/7</b></span><span>${t.trust} <b>${s.trust}</b></span><span>${t.decisions} <b>${s.history.length}</b></span></div><article class="quest-scene" aria-live="polite"><div class="quest-art">${root.ImperiumSketch?root.ImperiumSketch.render(n.art,n.title,t.sketch):''}</div><span class="quest-kicker">${t.chapter}</span><h3 tabindex="-1">${esc(n.title)}</h3><p>${esc(n.text)}</p>${consequence}</article><div class="quest-choices">${n.choices.map((c,i)=>`<button class="quest-choice" data-quest-choice="${i}" ${available(s,c)?'':'disabled'}><span>${esc(c.label)}</span>${available(s,c)?'':`<small>${esc(reason(s,c,lang))}</small>`}</button>`).join('')}${n.chapterComplete?`<div class="quest-soon"><h3>${t.soon}</h3><p>${t.wait}</p></div>`:''}</div><details class="quest-details"><summary>${t.inventory} (${s.items.length})</summary><p>${s.items.length?s.items.map(x=>esc(lang==='ru'?(itemsRU[x]||x):x)).join(' · '):t.empty}</p></details><details class="quest-details"><summary>${t.journal}</summary>${s.history.length?`<ol>${s.history.map(x=>{const [title,label]=historyEntry(x,lang);return `<li><b>${esc(title)}</b> — ${esc(label)}</li>`}).join('')}</ol>`:`<p>${t.newStory}</p>`}</details><p class="quest-save">${saving?t.saved:t.failed}</p></section>`;
+  container.querySelector('[data-quest-language]').onchange=e=>choose(e.target.value);
+  container.querySelectorAll('[data-quest-choice]').forEach(b=>b.onclick=()=>{s=advance(s,Number(b.dataset.questChoice));save();draw();container.querySelector('h3').focus({preventScroll:true});container.scrollIntoView({block:'start',behavior:'auto'});});
+  container.querySelectorAll('[data-quest-reset]').forEach(b=>b.onclick=()=>{if(!root.confirm(t.confirm))return;s=fresh();save();draw();});
+ }draw();
 }
-const api={scenes,fresh,available,advance,valid,mount};
+const api={scenes,fresh,available,advance,valid,mount,localized,historyEntry,ui,itemsRU};
 if(typeof module==='object'&&module.exports)module.exports=api;
 else root.ImperiumQuest=api;
 })(typeof window==='object'?window:globalThis);
