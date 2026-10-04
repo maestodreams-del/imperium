@@ -471,7 +471,7 @@ function imperialIcon(id){
     profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4.2 2.8-7 7-7s7 2.8 7 7"/></svg>',salary:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M16 12h5v5h-5z"/><circle cx="17" cy="14.5" r=".6"/></svg>',settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
   };return p[id]||'';
 }
-function nav(id,label,extra=''){const locked=reductionAccess().locked&&!['notice','game'].includes(id);return `<button class="navitem ${state.tab===id?'active':''} ${extra} ${locked?'navitem-locked':''}" data-tab="${id}" ${locked?'disabled aria-disabled="true" title="Sekcja zablokowana przez kierownictwo"':''}><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
+function nav(id,label,extra=''){const locked=reductionAccess().locked&&id!=='notice';return `<button class="navitem ${state.tab===id?'active':''} ${extra} ${locked?'navitem-locked':''}" data-tab="${id}" ${locked?'disabled aria-disabled="true" title="Sekcja zablokowana przez kierownictwo"':''}><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
 function chip(id,label){return `<button class="chip ${state.filter===id?'active':''}" data-filter="${id}">${label}</button>`;}
 function render(){
   if(state.loading)return;
@@ -513,22 +513,21 @@ function render(){
   if(state.tab==='game')window.ImperiumQuest?.mount(document.getElementById('imperium-quest'),state.mode+':'+u.id);
 }
 // All authenticated roles see the same notice and the same restricted navigation.
-// Authentication, app updates and the previously requested game remain available.
+// Authentication and app updates remain available during the technical pause.
 function renderRestrictedApp(u){
-  if(!['notice','game'].includes(state.tab))state.tab='notice';
+  state.tab='notice';
   state.modal=null;
   if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}
   state.invoicePdfBlob=null;selectedFiles=[];fileInput.value='';
   stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);
   if(profileMessageTimer){clearInterval(profileMessageTimer);profileMessageTimer=null;}
   app.innerHTML=`<div class="app aureus-shell light-shell work-locked">
-  <header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>Komunikat kierownictwa</small></div></div><div class="top-actions"><span class="command-role">${esc(u.name)}</span><button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div></div></header>
-  <main class="content">${state.tab==='notice'?reductionNotice()+'<section class="panel work-lock-info"><h3>Sekcje służbowe są zablokowane</h3><p>Blokada obowiązuje wszystkie konta, również administratorów. Dostępna pozostaje gra.</p><button class="goldbtn" data-tab="game">Przejdź do gry</button></section>':'<button class="ghost notice-return" data-tab="notice">Komunikat kierownictwa</button><div id="imperium-quest"></div>'}</main>
+  <header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>Przerwa techniczna</small></div></div><div class="top-actions"><span class="command-role">${esc(u.name)}</span><button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div></div></header>
+  <main class="content"><section class="panel maintenance-notice" role="status" style="padding:28px;margin-bottom:24px;border:2px solid #4472c4"><h2>Przerwa techniczna w działaniu aplikacji</h2><p>Prace w aplikacji zostały tymczasowo wstrzymane.</p><p>Wszystkie pozostałe funkcje i zakładki, w tym gra, są zablokowane dla wszystkich kont do odwołania.</p></section></main>
   <nav class="bottomnav"><div class="bottomnav-inner">${nav('notice','Komunikat')}${nav('game','Gra')}${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${nav('rentals','Najem')}${nav('invoices','Faktury')}${nav('important','Ważne')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','Ustawienia')}</div></nav></div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
-  app.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(b.disabled||!['notice','game'].includes(b.dataset.tab))return;state.tab=b.dataset.tab;render();});
+  app.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(b.disabled||b.dataset.tab!=='notice')return;state.tab='notice';render();});
   document.getElementById('logout').onclick=()=>state.mode==='cloud'?signOutCloud():demoLogout();
-  if(state.tab==='game')window.ImperiumQuest?.mount(document.getElementById('imperium-quest'),state.mode+':'+u.id);
 }
 async function loadSalaryMonth({refresh=false}={}){
   if(state.mode!=='cloud'||!currentUser())return;
