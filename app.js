@@ -19,7 +19,7 @@ let salaryLoadSequence = 0;
 let state = {
   ownerAccess: false, verifiedOwnerId: null, moduleMenu: false,
   mode: null, // null | demo | cloud
-  tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
+  tab: 'announcements', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
   salaryManager:false, salaryCompensations:[], salaryAdjustments:[], salaryMonth:new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), salaryWorkerId:null, salaryPots:[], salaryAdditions:[], salaryLoadedMonth:null, salaryLoading:false, salarySaving:false, rentalExpanded:{}, pdfZoom:1,
   demoSession: null, auth: null, db: null, attendance: [], shifts: [], inspections: [], rentals: [], rentalRooms: [], rentalDocuments: [], invoiceSellers: [], invoiceDrafts: [], invoiceId: null, invoiceLines: [], vouchers: [], inspectionId: null, rentalId: null, roomId: null, rentalLocationId: null, actionId: null, attendanceId: null, rentalActions: [], importantAlerts: [], alertsLoaded: false, loading: false, cloudError: '', lastEventAt: null
 };
@@ -138,11 +138,11 @@ function hasOwnerAccess(){
 }
 function reductionAccess(){return {recipient:false,owner:hasOwnerAccess(),locked:OWNER_ONLY_ACCESS&&!hasOwnerAccess()};}
 function umbrellaMark(){return '<img class="umbrella-mark" src="icons/icon.svg" alt="Umbrella" width="48" height="48">';}
-function moduleItems(){return [['tasks','Zadania'],['locations','Obiekty'],['inspections','Przeglądy'],['rentals','Najem'],['invoices','Faktury'],['important','Ważne'],['activity','Aktywność'],['attendance','Meldunek'],['chat','Czat'],['team','Zespół'],['profile','Profil'],['salary','Wynagrodzenia'],['game','Aurelia'],['settings','Ustawienia']];}
+function moduleItems(){return [['announcements','Ogłoszenia'],['browser','Przeglądarka'],['youtube','YouTube'],['locations','Obiekty'],['inspections','Przeglądy'],['rentals','Najem'],['invoices','Faktury'],['important','Ważne'],['activity','Aktywność'],['attendance','Meldunek'],['chat','Czat'],['team','Zespół'],['profile','Profil'],['salary','Wynagrodzenia'],['settings','Ustawienia']];}
 function renderModuleNavigation(){
  const items=moduleItems();
  return `<aside class="bio-sidebar" aria-label="Moduły aplikacji"><div class="sidebar-label">CENTRUM OPERACYJNE</div>${items.map(([id,label])=>nav(id,label)).join('')}<div class="sidebar-footer"><span class="bio-status-dot"></span> Dostęp właściciela<small>IMPERIUM · BIOTECH DIVISION</small></div></aside>
- <nav class="bio-mobile-nav" aria-label="Główna nawigacja">${[['tasks','Zadania'],['locations','Obiekty'],['important','Ważne'],['chat','Czat']].map(([id,label])=>nav(id,label)).join('')}<button class="navitem ${state.moduleMenu?'active':''}" id="module-menu" aria-label="Wszystkie moduły" aria-expanded="${state.moduleMenu}"><i>${imperialIcon('modules')}</i><span>Moduły</span></button></nav>
+ <nav class="bio-mobile-nav" aria-label="Główna nawigacja">${[['announcements','Ogłoszenia'],['browser','Internet'],['youtube','YouTube'],['chat','Czat']].map(([id,label])=>nav(id,label)).join('')}<button class="navitem ${state.moduleMenu?'active':''}" id="module-menu" aria-label="Wszystkie moduły" aria-expanded="${state.moduleMenu}"><i>${imperialIcon('modules')}</i><span>Moduły</span></button></nav>
  ${state.moduleMenu?`<div class="module-backdrop"><section class="module-drawer" role="dialog" aria-modal="true" aria-labelledby="module-title"><header><div><div class="eyebrow">IMPERIUM / MODUŁY</div><h2 id="module-title">Wszystko pod kontrolą</h2></div><button class="iconbtn" id="close-modules" aria-label="Zamknij moduły">×</button></header><div class="module-grid">${items.map(([id,label])=>nav(id,label)).join('')}</div></section></div>`:''}`;
 }
 function reductionNotice(){
@@ -162,7 +162,7 @@ function salaryData(){
 }
 function canManageRentals(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canManageRentals); }
 function canAddInspections(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canAddInspections); }
-function canCreateTasks(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canCreateTasks); }
+function canCreateTasks(){ return false; }
 function canViewTeamHours(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canViewTeamHours); }
 function canViewImportant(){ return isAdmin()||!!(currentUser()?.active&&currentUser()?.canViewImportant); }
 function allowedLocations(){ return isAdmin()?state.db.locations:state.db.locations.filter(l=>currentUser()?.locationIds.includes(l.id)); }
@@ -273,8 +273,8 @@ async function refreshSession(){
 }
 async function cloudFetch(path,{method='GET',body=null,headers={},raw=false,auth=true}={}){
   if(OWNER_ONLY_ACCESS && !hasOwnerAccess() && !path.startsWith('/auth/v1/')){
-    const permitted=(method==='GET'&&path.startsWith('/rest/v1/app_updates?')) ||
-      (method==='POST'&&path==='/rest/v1/rpc/imperium_access_status');
+    const permitted=(method==='GET'&&(path.startsWith('/rest/v1/app_updates?')||path==='/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk')) ||
+      (method==='POST'&&['imperium_access_status','imperium_comms_feed','imperium_ack_announcement','imperium_register_notice_device','imperium_revoke_notice_device'].some(name=>path==='/rest/v1/rpc/'+name));
     if(!permitted)throw new Error('Dostęp do aplikacji jest obecnie ograniczony do właściciela.');
   }
   const c=cloudConfig(); if(!c) throw new Error('Brak konfiguracji chmury.');
@@ -298,6 +298,7 @@ async function signInCloud(email,password){
 }
 async function signUpCloud(){throw new Error('Rejestracja jest obecnie zamknięta.');}
 async function signOutCloud(){
+  await window.ImperiumComms.logout();
   try{await cloudFetch('/auth/v1/logout',{method:'POST'});}catch(e){}
   localStorage.removeItem(AUTH_KEY); state.auth=null; state.db=null;state.ownerAccess=false;state.verifiedOwnerId=null;state.moduleMenu=false; stopPolling(); render();
 }
@@ -349,7 +350,7 @@ async function loadRestrictedAccount(){
   state.ownerAccess=false;state.verifiedOwnerId=null;state.salaryManager=false;
   state.db={version:2,users:[{id:user.id,name:user.user_metadata?.full_name||user.email||'Użytkownik',role:'worker',active:true,locationIds:[]}],locations:[],tasks:[],events:[],coinTransactions:[]};
   state.attendance=[];state.shifts=[];state.inspections=[];state.rentals=[];state.rentalRooms=[];state.rentalDocuments=[];state.invoiceSellers=[];state.invoiceDrafts=[];state.vouchers=[];state.rentalActions=[];state.importantAlerts=[];state.salaryCompensations=[];state.salaryAdjustments=[];state.salaryPots=[];state.salaryAdditions=[];
-  stopPolling();state.loading=false;render();
+  stopPolling();await window.ImperiumComms.connect(user.id);state.loading=false;render();
   checkImperiumUpdate().catch(()=>{});
 }
 async function loadCloudDB({silent=false}={}){
@@ -359,7 +360,8 @@ async function loadCloudDB({silent=false}={}){
     const access=await cloudFetch('/rest/v1/rpc/imperium_access_status',{method:'POST',body:{}});
     if(access!==true)return loadRestrictedAccount();
     state.ownerAccess=true;state.verifiedOwnerId=state.auth.user.id;
-    if(state.tab==='notice')state.tab='tasks';
+    await window.ImperiumComms.connect(state.auth.user.id);
+    if(state.tab==='notice')state.tab='announcements';
     if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
     const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments,invoiceSellers,invoiceDrafts,salaryManager]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,can_view_important,created_at&order=created_at.asc'),
@@ -397,7 +399,8 @@ async function loadCloudDB({silent=false}={}){
     state.vouchers=(vouchers||[]).map(v=>({id:v.id,userId:v.profile_id,kind:v.kind,cost:v.cost,startsAt:v.starts_at,endsAt:v.ends_at,status:v.status,redeemedAt:v.redeemed_at}));
     state.shifts=(shifts||[]).map(s=>({id:s.id,userId:s.profile_id,locationId:s.location_id,startsAt:s.starts_at,endsAt:s.ends_at}));
     state.db={version:2,users:profiles.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,canManageRentals:!!p.can_manage_rentals,canAddInspections:!!p.can_add_inspections,canCreateTasks:!!p.can_create_tasks,canViewTeamHours:!!p.can_view_team_hours,canViewImportant:!!p.can_view_important,locationIds:pls.filter(x=>x.profile_id===p.id).map(x=>x.location_id)})),locations:locations.map(l=>({id:l.id,name:l.name,city:l.city||'',address:l.address||'',description:l.description||'',active:l.active})),tasks:tasks.map(t=>mapTaskRow(t,comments,atts)),disciplinaryRecords:discipline.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,type:r.record_type,description:r.description,createdBy:r.created_by,createdAt:r.created_at})),coinTransactions:coins.map(r=>({id:r.id,userId:r.profile_id,taskId:r.task_id,kind:r.transaction_kind,amount:Number(r.amount||0),description:r.description||'',createdBy:r.created_by,createdAt:r.created_at})),events:events.map(e=>({id:e.id,type:e.event_type,text:e.message,userId:e.actor_id,taskId:e.task_id,createdAt:e.created_at}))};
-    await loadExtraMissions();
+    // Task and mission records are retained only as historical data.
+    extraMissions=[];
     deliverImportantAlerts();
     const newest=state.db.events[0]?.createdAt||null;
     if(state.lastEventAt && newest){ const fresh=state.db.events.filter(e=>new Date(e.createdAt)>new Date(state.lastEventAt) && e.userId!==currentUser()?.id); if(fresh.length) notify('IMPERIUM',fresh[0].text); }
@@ -406,7 +409,7 @@ async function loadCloudDB({silent=false}={}){
     if(!silent){
   checkImperiumUpdate().catch(()=>{});
 }
-    if(!silent || (!state.modal && state.tab!=='chat' && state.tab!=='salary' && !(state.tab==='profile'&&(publicProfileId||state.profileView==='messages')) && !document.activeElement?.closest('.shift-admin'))) render();
+    if(!window.ImperiumComms.state.compose && (!silent || (!state.modal && state.tab!=='chat' && state.tab!=='salary' && !(state.tab==='profile'&&(publicProfileId||state.profileView==='messages')) && !document.activeElement?.closest('.shift-admin')))) render();
     if(isAdmin() && state.db.locations.length===0){ try{await cloudFetch('/rest/v1/rpc/seed_default_locations',{method:'POST',body:{}});await sleep(300);return loadCloudDB({silent:false});}catch(e){} }
   }catch(e){
     state.loading=false;state.cloudError=e.message;state.ownerAccess=false;state.verifiedOwnerId=null;
@@ -451,7 +454,7 @@ function renderDemoLogin(){
   document.getElementById('login-worker').onclick=()=>demoLogin(document.getElementById('worker-select').value);
   document.getElementById('back-setup').onclick=()=>{state.mode=null;localStorage.removeItem(MODE_KEY);render();};
 }
-function demoLogin(id){ state.demoSession={userId:id}; localStorage.setItem(DEMO_SESSION_KEY,JSON.stringify(state.demoSession)); state.tab='tasks'; render(); }
+function demoLogin(id){ state.demoSession={userId:id}; localStorage.setItem(DEMO_SESSION_KEY,JSON.stringify(state.demoSession)); state.tab='announcements'; render(); }
 function demoLogout(){ localStorage.removeItem(DEMO_SESSION_KEY);state.demoSession=null;render(); }
 
 // ---------- UI ----------
@@ -465,6 +468,9 @@ function imperialIcon(id){
     invoices:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3zM8 8h8M8 12h8M8 16h5"/></svg>',
     important:'<svg viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3zM12 9v5M12 17v1"/></svg>',
     activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
+    announcements:'<svg viewBox="0 0 24 24"><path d="M4 8h5l10-4v16L9 16H4zM8 16l2 5h3l-2-5M22 8v8"/></svg>',
+    browser:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18M12 3c5 5 5 13 0 18"/></svg>',
+    youtube:'<svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3z"/></svg>',
     modules:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
     lock:'<svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>',
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
@@ -495,32 +501,38 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
+  if(['tasks','game','notice'].includes(state.tab))state.tab='announcements';
   const reduction=reductionAccess();
   if(reduction.locked)return renderRestrictedApp(u);
   if(state.mode==='demo'){state.attendance=state.db.attendance||[];state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.invoiceSellers=state.db.invoiceSellers||[];state.invoiceDrafts=state.db.invoiceDrafts||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
-  if(!canManageRentals()&&state.tab==='rentals')state.tab='tasks';
-  if(!isAdmin()&&state.tab==='invoices')state.tab='tasks';
-  if(!canViewImportant()&&state.tab==='important')state.tab='tasks';
+  if(!canManageRentals()&&state.tab==='rentals')state.tab='announcements';
+  if(!isAdmin()&&state.tab==='invoices')state.tab='announcements';
+  if(!canViewImportant()&&state.tab==='important')state.tab='announcements';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
   app.innerHTML=`<div class="app aureus-shell bio-shell">
   <header class="topbar"><div class="topbar-inner">
     <div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · BIOTECH DIVISION</small></div></div>
-    <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">Dostęp właściciela</span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
+    <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">Dostęp właściciela</span>${hasOwnerAccess()?'<button class="command-add" data-compose aria-label="Nowe ogłoszenie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
   </div></header>
-  <main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1]||'Centrum operacyjne')}<small>PRIVATE TERMINAL</small></div>${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}${state.tab==='game'?'<div id="imperium-quest"></div>':''}</main>
+  <main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1]||'Centrum operacyjne')}<small>PRIVATE TERMINAL</small></div>${state.tab==='announcements'?window.ImperiumComms.render():''}${state.tab==='browser'?window.ImperiumComms.browserPage(false):''}${state.tab==='youtube'?window.ImperiumComms.browserPage(true):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
   ${renderModuleNavigation()}
   ${renderModal()}</div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');
   if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
-  bind();
+  bind();window.ImperiumComms.bind();if(['browser','youtube'].includes(state.tab))window.ImperiumComms.bindBrowser(state.tab==='youtube');
   document.getElementById('module-menu')?.addEventListener('click',()=>{state.moduleMenu=true;render();document.getElementById('close-modules')?.focus();});
   document.getElementById('close-modules')?.addEventListener('click',()=>{state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();});
   const drawer=app.querySelector('.module-drawer');
   drawer?.addEventListener('keydown',e=>{if(e.key==='Escape'){state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();}if(e.key==='Tab'){const buttons=[...drawer.querySelectorAll('button')];const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
-  if(state.tab==='game')window.ImperiumQuest?.mount(document.getElementById('imperium-quest'),state.mode+':'+u.id);
+
 }
 // Non-owner sessions keep only sign-out and retry; operational data is discarded.
 function renderRestrictedApp(u){
+ if(window.ImperiumComms.state.active&&window.ImperiumComms.userId()===u.id){
+  state.tab='announcements';state.modal=null;state.moduleMenu=false;
+  app.innerHTML=`<div class="app bio-shell participant-shell"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · COMMUNICATIONS</small></div></div><button class="ghost" id="logout" aria-label="Wyloguj się">Wyloguj</button></div></header><main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>Ogłoszenia</div>${window.ImperiumComms.render()}</main></div>`;
+  window.ImperiumComms.bind();document.getElementById('logout').onclick=signOutCloud;return;
+ }
  state.tab='notice';state.modal=null;state.moduleMenu=false;
  if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}
  state.invoicePdfBlob=null;selectedFiles=[];fileInput.value='';
@@ -929,8 +941,9 @@ async function adminStopAttendance(userId){
 }
 function renderActivityPage(){return `<div class="toolbar"><div><div class="eyebrow">Dziennik</div><h2 class="section-title">Aktywność</h2></div></div><div class="settings-card">${state.db.events.slice(0,100).map(e=>`<div class="activity"><p>${esc(e.text)}</p><small>${fmtDate(e.createdAt)}</small></div>`).join('')||'<div class="empty">Brak zdarzeń.</div>'}</div>`;}
 function renderTeamPage(){
-  return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()?`<div class="voucher-exchange"><div class="eyebrow">KONTROLA VOUCHERÓW</div><h3>Aktywne i do wypłaty</h3><div class="voucher-list">${voucherRows().filter(v=>voucherState(v)==='Aktywny'||voucherState(v)==='Do wypłaty').map(v=>voucherCard(v,true)).join('')||'<div class="empty compact">Brak aktywnych voucherów i premii do wypłaty.</div>'}</div></div>`:''}${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Konta pracowników są zachowane. Dostęp do aplikacji jest obecnie otwarty tylko dla właściciela.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>${u.id===state.verifiedOwnerId?'Właściciel':u.role==='admin'?'Administrator':'Pracownik'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions"><button class="smallbtn" data-public-profile="${u.id}">Profil / wiadomość</button>${isAdmin()||u.id===currentUser().id||canViewTeamHours()&&u.locationIds.some(id=>currentUser().locationIds.includes(id))?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
+ return `<div class="toolbar"><div><div class="eyebrow">UCZESTNICY</div><h2 class="section-title">Zespół</h2></div></div><div class="status-note">Uczestnicy mają dostęp do ogłoszeń. Pozostałe moduły pozostają prywatne.</div><div class="list">${state.db.users.map(u=>`<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)}</b><small>${u.active?'Aktywny':'Nieaktywny'} · ${u.id===state.verifiedOwnerId?'Właściciel':u.role==='admin'?'Administrator':'Pracownik'}</small></div></div><div class="row-actions"><button class="smallbtn" data-public-profile="${u.id}">Profil</button>${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`).join('')}</div>`;
 }
+
 function taskProgressStats(userId){
   const all=state.db.tasks||[], mine=all.filter(t=>t.claimedBy===userId||t.assignedTo===userId);
   const done=mine.filter(t=>t.status==='done').length, active=mine.filter(t=>t.status!=='done').length;
@@ -974,28 +987,10 @@ function bindPublicProfileLinks(root=document){root.querySelectorAll('[data-publ
 function bindProfileMessaging(){bindPublicProfileLinks();document.getElementById('profile-messenger')?.addEventListener('click',openProfileInbox);document.querySelectorAll('[data-profile-inbox]').forEach(b=>b.onclick=openProfileInbox);document.querySelectorAll('[data-profile-home]').forEach(b=>b.onclick=()=>{publicProfileId=null;state.profileView='mine';state.tab='profile';render();});document.querySelectorAll('[data-profile-members]').forEach(b=>b.onclick=()=>{state.tab='team';render();});document.getElementById('profile-message-send')?.addEventListener('click',sendProfileMessage);document.getElementById('profile-message-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();sendProfileMessage();}});ensureProfileMessagePolling();}
 
 function renderProfilePage(){
-  if(publicProfileId)return renderPublicProfile();
-  if(state.profileView==='messages')return `<section class="profile-page">${profileMessageNavigation()}${renderProfileMessages()}</section>`;
-  const u=currentUser(), ps=taskProgressStats(u.id), all=state.db.tasks||[], allDone=all.filter(t=>t.status==='done').length, allPct=all.length?Math.round(allDone/all.length*100):0;
-  const active=ps.mine.filter(t=>t.status!=='done'&&!(t.status==='open'&&t.scheduledStart&&new Date(t.scheduledStart)>new Date()&&t.assignedTo===u.id)).sort((a,b)=>new Date(a.deadlineAt||a.createdAt)-new Date(b.deadlineAt||b.createdAt));
-  const planned=ps.mine.filter(t=>t.status==='open'&&t.scheduledStart&&new Date(t.scheduledStart)>new Date()&&t.assignedTo===u.id).sort((a,b)=>new Date(a.scheduledStart)-new Date(b.scheduledStart));
-  const completed=ps.mine.filter(t=>t.status==='done').slice().sort((a,b)=>new Date(b.completedAt||b.createdAt)-new Date(a.completedAt||a.createdAt)).slice(0,5);
-  return `<section class="profile-page">
-    ${profileMessageNavigation()}
-    ${canViewTeamHours()?`<div class="profile-tabs"><button class="smallbtn ${state.profileView==='mine'?'gold':''}" data-profile-view="mine">Mój profil</button><button class="smallbtn ${state.profileView==='team'?'gold':''}" data-profile-view="team">Obiekty i zespół</button></div>`:''}
-    ${state.profileView==='team'&&canViewTeamHours()?renderTeamHoursPage():`<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL COMMAND FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div><div class="profile-balance"><span>SALDO</span><b>${coinBalance(u.id)} NK</b></div></div>
-    ${renderExtraMissionsSection()}
-    <div class="profile-progress-grid">${renderProgressBar('MOJA REALIZACJA',ps.done,ps.total,ps.pct,ps.active+' aktywnych')}${renderProgressBar('REALIZACJA IMPERIUM',allDone,all.length,allPct,'wszystkie zadania systemu')}</div>
-    <div class="settings-card shift-list"><div class="subheading">Mój grafik pracy</div>${shiftsFor(u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,20).map(s=>`<div class="shift-row"><div><b>${esc(getLoc(s.locationId)?.name||'Obiekt')}</b><small>${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div></div>`).join('')||'<div class="empty compact">Administrator nie dodał jeszcze zmian.</div>'}</div>
-    <div class="voucher-exchange"><div class="eyebrow">WYMIANA NK</div><h3>Imperatorski wymiennik</h3><div class="voucher-options"><label><input type="radio" name="voucher-kind" value="hours_2" checked> 1000 NK · 2 godziny</label><label><input type="radio" name="voucher-kind" value="hours_4"> 2000 NK · 4 godziny</label><label><input type="radio" name="voucher-kind" value="day"> 5000 NK · dzień wolny</label><label><input type="radio" name="voucher-kind" value="bonus_500"> 7500 NK · premia 500 zł</label></div><div class="field" id="voucher-time-field"><label>Początek wolnego (data i godzina)</label><input type="datetime-local" id="voucher-start"></div><div class="field" id="voucher-day-field" hidden><label>Dzień wolny</label><input type="date" id="voucher-day"></div><p class="subtle">Godziny wolnego muszą mieścić się w zapisanej zmianie, a dzień wolny wymaga zmiany w tym dniu. Punkty są pobierane przy wymianie. Premia tworzy wniosek widoczny dla administratora; wypłata jest potwierdzana osobno.</p><button class="goldbtn" id="redeem-voucher">Wymień Nikitocoiny</button></div>
-    <div class="profile-section-head compact"><div><div class="eyebrow">MOJE KORZYŚCI</div><h3>Vouchery</h3></div></div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v)).join('')||'<div class="empty compact">Nie masz jeszcze voucherów.</div>'}</div>
-    <div class="profile-section-head"><div><div class="eyebrow">PLAN</div><h3>Zaplanowane zadania</h3></div><span>${planned.length} ZAPLANOWANE</span></div><div class="profile-missions">${planned.map(t=>taskCard(t,u)).join('')||'<div class="empty compact">Brak zaplanowanych zadań.</div>'}</div>
-    <div class="profile-section-head"><div><div class="eyebrow">PRZYDZIAŁ</div><h3>Moje zadania</h3></div><span>${active.length} AKTYWNE</span></div>
-    <div class="profile-missions">${active.length?active.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak aktywnych zadań.</div>'}</div>
-    <div class="profile-section-head compact"><div><div class="eyebrow">ARCHIWUM</div><h3>Ostatnio wykonane</h3></div></div>
-    <div class="profile-history">${completed.length?completed.map(t=>`<button class="history-row" data-history-task="${t.id}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'')} • ${fmtDate(t.completedAt||t.createdAt)}</small></span><em>WYKONANE</em></button>`).join(''):'<div class="empty compact">Brak wykonanych zadań.</div>'}</div>
-  `}
-  </section>`;
+ if(publicProfileId)return renderPublicProfile();
+ if(state.profileView==='messages')return `<section class="profile-page">${profileMessageNavigation()}${renderProfileMessages()}</section>`;
+ const u=currentUser();
+ return `<section class="profile-page">${profileMessageNavigation()}<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} · ${u.locationIds.map(id=>esc(getLoc(id)?.name)).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div></div><div class="settings-card"><h3>Mój grafik pracy</h3>${shiftsFor(u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,20).map(s=>`<div class="shift-row"><b>${esc(getLoc(s.locationId)?.name||'Obiekt')}</b><small>${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div>`).join('')||'<p>Brak zaplanowanych zmian.</p>'}</div></section>`;
 }
 
 const teamDayFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Warsaw',year:'numeric',month:'2-digit',day:'2-digit'});
@@ -1051,23 +1046,12 @@ function renderWorkerPlans(u){
 }
 function pendingImportantCount(){return (state.importantAlerts||[]).filter(a=>!a.inProgressAt).length;}
 function importantIndicatorClass(){const n=pendingImportantCount();return n>=4?'important-level-red':n>=2?'important-level-yellow':n===1?'important-level-blue':'';}
-function hasSoonMission(){const now=Date.now();return importantPlannedMissions().some(({task})=>{const left=new Date(task.scheduledStart).getTime()-now;return left>0&&left<7*86400000;});}
-function importantPlannedMissions(){
-  if(!canViewImportant())return [];
-  const visible=isAdmin()?null:new Set(currentUser().locationIds),groups=new Map(),now=Date.now();
-  for(const task of state.db.tasks){
-    if(task.status!=='open'||!task.scheduledStart||new Date(task.scheduledStart).getTime()<=now||!task.assignedTo||visible&&!visible.has(task.locationId))continue;
-    const key=[task.groupId||task.id,task.locationId,task.scheduledStart,task.scheduledEnd,task.title].join('|');
-    if(!groups.has(key))groups.set(key,{task,workers:[]});
-    const name=getUser(task.assignedTo)?.name;
-    if(name&&!groups.get(key).workers.includes(name))groups.get(key).workers.push(name);
-  }
-  return [...groups.values()].sort((a,b)=>new Date(a.task.scheduledStart)-new Date(b.task.scheduledStart));
-}
+function hasSoonMission(){return false;}
+function importantPlannedMissions(){return [];}
 function renderImportantPage(){
   if(!canViewImportant())return '';
   const alerts=state.importantAlerts||[],missions=importantPlannedMissions();
-  return `<div class="toolbar"><div><div class="eyebrow">PILNE TERMINY</div><h2 class="section-title">Ważne</h2></div><span class="badge">${alerts.length} przypomnień · ${missions.length} misji</span></div><div class="status-note">Przypomnienia pozostają tutaj do oznaczenia jako wykonane. Daty dotyczą obiektów, do których masz dostęp.</div><div class="subheading important-section-title">Planowane misje pracowników</div><div class="important-list">${missions.map(({task,workers})=>`<button class="settings-card important-mission" data-history-task="${esc(task.id)}"><span><small>${esc(getLoc(task.locationId)?.name||'Obiekt')} · ${fmtDate(task.scheduledStart)} → ${fmtDate(task.scheduledEnd)}</small><b>${esc(task.title)}</b><small>Wykonawcy: ${esc(workers.join(', '))}</small></span><em>OTWÓRZ</em></button>`).join('')||'<div class="empty compact">Brak zaplanowanych misji.</div>'}</div><div class="subheading important-section-title">Przypomnienia o terminach</div><div class="important-list">${alerts.map(a=>`<article class="settings-card important-card"><div><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} · termin ${esc(a.dueOn)}</small><h3>${esc(a.title)}</h3>${a.details?`<p>${esc(a.details)}</p>`:''}<small class="important-status">${a.inProgressAt?'W TRAKCIE':'OCZEKUJE'}</small></div><div class="important-actions"><button class="smallbtn" data-progress-alert="${esc(a.id)}" data-progress-value="${a.inProgressAt?'0':'1'}">${a.inProgressAt?'Cofnij status':'W trakcie'}</button><button class="smallbtn gold" data-complete-alert="${esc(a.id)}">Wykonane</button></div></article>`).join('')||'<div class="empty">Nie ma aktywnych przypomnień.</div>'}</div>`;
+  return `<div class="toolbar"><div><div class="eyebrow">PILNE TERMINY</div><h2 class="section-title">Ważne</h2></div><span class="badge">${alerts.length} przypomnień</span></div><div class="status-note">Przypomnienia pozostają tutaj do oznaczenia jako wykonane. Daty dotyczą obiektów, do których masz dostęp.</div><div class="subheading important-section-title">Przypomnienia o terminach</div><div class="important-list">${alerts.map(a=>`<article class="settings-card important-card"><div><small>${esc(getLoc(a.locationId)?.name||'Obiekt')} · termin ${esc(a.dueOn)}</small><h3>${esc(a.title)}</h3>${a.details?`<p>${esc(a.details)}</p>`:''}<small class="important-status">${a.inProgressAt?'W TRAKCIE':'OCZEKUJE'}</small></div><div class="important-actions"><button class="smallbtn" data-progress-alert="${esc(a.id)}" data-progress-value="${a.inProgressAt?'0':'1'}">${a.inProgressAt?'Cofnij status':'W trakcie'}</button><button class="smallbtn gold" data-complete-alert="${esc(a.id)}">Wykonane</button></div></article>`).join('')||'<div class="empty">Nie ma aktywnych przypomnień.</div>'}</div>`;
 }
 function deliverImportantAlerts(){
   const id=state.auth?.user?.id;if(!id||!state.importantAlerts.length)return;
@@ -1132,7 +1116,7 @@ async function completeImportantAlert(id){
 
 function renderSettingsPage(){
   const u=currentUser();
-  return `<div class="toolbar"><div><div class="eyebrow">System</div><h2 class="section-title">Ustawienia</h2></div></div><div class="settings-card"><h3>Dostęp prywatny</h3><p>Aplikacja jest otwarta wyłącznie dla właściciela. Pozostałe konta pozostają tymczasowo zablokowane.</p>${state.cloudError?`<div class="status-note danger-text">${esc(state.cloudError)}</div>`:''}</div><div class="settings-card"><h3>IMPERIUM / Biotech</h3><p>Nowy interfejs korporacyjny. Ekran startowy Umbrella wyświetla się przez 10 sekund przy pierwszym uruchomieniu tej wersji na urządzeniu.</p></div><div class="settings-card"><h3>Powiadomienia</h3><p>Ustaw powiadomienia o zadaniach i wiadomościach.</p><div class="task-actions"><button class="smallbtn gold" id="enable-notifications">Włącz powiadomienia</button><button class="smallbtn" id="notification-sound-test">Sprawdź dźwięk</button></div></div><div class="settings-card"><h3>Konto właściciela</h3><p>${esc(u.name)}</p><button class="dangerbtn" id="cloud-logout">Wyloguj się</button></div>`;
+  return `<div class="toolbar"><div><div class="eyebrow">System</div><h2 class="section-title">Ustawienia</h2></div></div><div class="settings-card"><h3>Dostęp prywatny</h3><p>Moduły operacyjne są dostępne tylko dla właściciela. Uczestnicy mogą czytać ogłoszenia i potwierdzać ich przeczytanie.</p>${state.cloudError?`<div class="status-note danger-text">${esc(state.cloudError)}</div>`:''}</div><div class="settings-card"><h3>IMPERIUM / Biotech</h3><p>Nowy interfejs korporacyjny. Ekran startowy Umbrella wyświetla się przez 10 sekund przy pierwszym uruchomieniu tej wersji na urządzeniu.</p></div><div class="settings-card"><h3>Powiadomienia</h3><p>Ustaw powiadomienia o zadaniach i wiadomościach.</p><div class="task-actions"><button class="smallbtn gold" id="enable-notifications">Włącz powiadomienia</button><button class="smallbtn" id="notification-sound-test">Sprawdź dźwięk</button></div></div><div class="settings-card"><h3>Konto właściciela</h3><p>${esc(u.name)}</p><button class="dangerbtn" id="cloud-logout">Wyloguj się</button></div>`;
 }
 
 function renderWorkerCard(){
@@ -1301,7 +1285,7 @@ function renderModal(){
   if(state.modal==='newUser')return `<div class="modal-bg"><div class="modal"><h2>Nowy pracownik demo</h2><div class="field"><label>Imię / nazwa</label><input id="f-username"></div><div class="field"><label>Obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}"> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user">Dodaj</button></div></div></div>`;
   if(state.modal==='editUser'){
     const u=state.db.users.find(x=>x.id===state.userId);
-    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><label class="checkrow"><input id="f-add-inspections" type="checkbox" ${u.canAddInspections?'checked':''}> Może dodawać przeglądy w przypisanych obiektach</label><label class="checkrow"><input id="f-create-tasks" type="checkbox" ${u.canCreateTasks?'checked':''}> Może dodawać zadania w przypisanych obiektach</label><label class="checkrow"><input id="f-view-team-hours" type="checkbox" ${u.canViewTeamHours?'checked':''}> Może widzieć czas pracy i wykonane zadania w przypisanych obiektach</label><label class="checkrow"><input id="f-view-important" type="checkbox" ${u.canViewImportant?'checked':''}> Widzi ważne terminy swoich obiektów</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
+    return `<div class="modal-bg"><div class="modal"><h2>Edytuj pracownika</h2><div class="field"><label>Imię / nazwa</label><input id="f-username" value="${esc(u.name)}"></div><div class="formgrid"><div class="field"><label>Rola</label><select id="f-role"><option value="worker" ${u.role==='worker'?'selected':''}>Pracownik</option><option value="admin" ${u.role==='admin'?'selected':''}>Administrator</option></select></div><div class="field"><label>Status</label><select id="f-active"><option value="1" ${u.active?'selected':''}>Aktywny</option><option value="0" ${!u.active?'selected':''}>Nieaktywny</option></select></div></div><label class="checkrow"><input id="f-manage-rentals" type="checkbox" ${u.canManageRentals?'checked':''}> Może dodawać i edytować umowy najmu w przypisanych obiektach</label><label class="checkrow"><input id="f-add-inspections" type="checkbox" ${u.canAddInspections?'checked':''}> Może dodawać przeglądy w przypisanych obiektach</label><label class="checkrow"><input id="f-view-team-hours" type="checkbox" ${u.canViewTeamHours?'checked':''}> Może widzieć czas pracy w przypisanych obiektach</label><label class="checkrow"><input id="f-view-important" type="checkbox" ${u.canViewImportant?'checked':''}> Widzi ważne terminy swoich obiektów</label><div class="field"><label>Przypisane obiekty</label><div class="checkbox-grid">${state.db.locations.map(l=>`<label class="checkrow"><input type="checkbox" name="userloc" value="${l.id}" ${u.locationIds.includes(l.id)?'checked':''}> ${esc(l.name)}</label>`).join('')}</div></div><div class="modal-actions">${close}<button class="goldbtn" id="save-user-edit">Zapisz</button></div></div></div>`;
   }
   return '';
 }
@@ -1806,7 +1790,7 @@ async function saveLocationFromForm(){
 }
 function addDemoUser(){const name=document.getElementById('f-username').value.trim();if(!name)return toast('Wpisz imię pracownika.');const locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);state.db.users.push({id:uid(),name,role:'worker',locationIds:locs,active:true});logEvent('user',`Dodano pracownika „${name}”`);saveDemoDB();state.modal=null;render();}
 async function saveUserEdit(){
-  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,canAddInspections=document.getElementById('f-add-inspections').checked,canCreateTasks=document.getElementById('f-create-tasks').checked,canViewTeamHours=document.getElementById('f-view-team-hours').checked,canViewImportant=document.getElementById('f-view-important').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
+  const u=state.db.users.find(x=>x.id===state.userId),name=document.getElementById('f-username').value.trim(),role=document.getElementById('f-role').value,active=document.getElementById('f-active').value==='1',canManageRentals=document.getElementById('f-manage-rentals').checked,canAddInspections=document.getElementById('f-add-inspections').checked,canCreateTasks=!!u.canCreateTasks,canViewTeamHours=document.getElementById('f-view-team-hours').checked,canViewImportant=document.getElementById('f-view-important').checked,locs=[...document.querySelectorAll('input[name=userloc]:checked')].map(x=>x.value);if(!name)return toast('Wpisz imię.');if(u.id===currentUser().id&&(!active||role!=='admin'))return toast('Nie możesz odebrać sobie dostępu administratora z własnego konta.');
   await withAction('Zapisywanie pracownika…',async()=>{if(state.mode==='demo'){Object.assign(u,{name,role,active,canManageRentals,canAddInspections,canCreateTasks,canViewTeamHours,canViewImportant,locationIds:locs});await logEvent('user_edit',`Zmieniono konto „${name}”`);saveDemoDB();}else{await pgPatch('profiles',`id=eq.${u.id}`,{full_name:name,role,active,can_manage_rentals:canManageRentals,can_add_inspections:canAddInspections,can_create_tasks:canCreateTasks,can_view_team_hours:canViewTeamHours,can_view_important:canViewImportant});await pgDelete('profile_locations',`profile_id=eq.${u.id}`);if(locs.length)await pgPost('profile_locations',locs.map(location_id=>({profile_id:u.id,location_id})));await logEvent('user_edit',`Zmieniono konto „${name}”`);await loadCloudDB({silent:true});}state.modal=null;state.userId=null;});
 }
 async function saveCoinAdjustment(){
@@ -1957,6 +1941,9 @@ function initSeason(){
 
   document.body.appendChild(box);
 }
+
+window.addEventListener('imperium-open-announcements',()=>{state.tab='announcements';window.ImperiumComms.refresh();render();});
+window.ImperiumComms.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),config:cloudConfig,render,downloadApk:async()=>{if(!window.AndroidBridge?.saveFile){window.open('https://github.com/maestodreams-del/imperium/releases/download/v6.0.0/IMPERIUM-6.0.0.apk','_blank','noopener');return;}const response=await cloudFetch('/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk',{raw:true});const blob=await response.blob();await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{window.AndroidBridge.saveFile('IMPERIUM-6.0.0.apk','application/vnd.android.package-archive',String(reader.result).split(',')[1]);resolve();};reader.onerror=reject;reader.readAsDataURL(blob);});}});
 
 // The versioned first-run introduction lives outside the app render tree.
   init();

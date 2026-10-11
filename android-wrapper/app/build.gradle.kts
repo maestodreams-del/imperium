@@ -20,8 +20,8 @@ android {
         minSdk = 26
         targetSdk = 35
 
-        versionCode = 15
-versionName = "5.2.8"
+        versionCode = 16
+        versionName = "6.0.0"
     }
 
     buildTypes {
@@ -32,3 +32,5 @@ versionName = "5.2.8"
     }
 }
 
+
+dependencies { testImplementation("junit:junit:4.13.2") }
