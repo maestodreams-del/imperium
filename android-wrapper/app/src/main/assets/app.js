@@ -526,7 +526,7 @@ function render(){
   drawer?.addEventListener('keydown',e=>{if(e.key==='Escape'){state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();}if(e.key==='Tab'){const buttons=[...drawer.querySelectorAll('button')];const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
 
 }
-// Non-owner sessions keep only sign-out and retry; operational data is discarded.
+// Participants see only their announcement feed; operational data is discarded.
 function renderRestrictedApp(u){
  if(window.ImperiumComms.state.active&&window.ImperiumComms.userId()===u.id){
   state.tab='announcements';state.modal=null;state.moduleMenu=false;
@@ -538,7 +538,7 @@ function renderRestrictedApp(u){
  state.invoicePdfBlob=null;selectedFiles=[];fileInput.value='';
  stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);
  if(profileMessageTimer){clearInterval(profileMessageTimer);profileMessageTimer=null;}
- app.innerHTML=`<main class="login bio-login"><section class="login-card access-denied"><div class="bio-wordmark">${umbrellaMark()}<span>UMBRELLA<small>BIOTECHNOLOGY DIVISION</small></span></div><div class="login-classification">IMPERIUM / DOSTĘP OGRANICZONY</div><div class="access-symbol">${imperialIcon('lock')}</div><h1>Strefa zamknięta</h1><p>Aplikacja jest obecnie dostępna wyłącznie dla właściciela.</p><p class="subtle">Pozostałe konta są tymczasowo zablokowane.</p><div class="denied-account">${esc(u.name)}</div><button class="goldbtn" id="retry-access">Sprawdź dostęp ponownie</button><button class="ghost" id="logout">Wyloguj się</button></section></main>`;
+ app.innerHTML=`<main class="login bio-login"><section class="login-card access-denied"><div class="bio-wordmark">${umbrellaMark()}<span>UMBRELLA<small>BIOTECHNOLOGY DIVISION</small></span></div><div class="login-classification">IMPERIUM / DOSTĘP OGRANICZONY</div><div class="access-symbol">${imperialIcon('lock')}</div><h1>Nie udało się otworzyć konta</h1><p>Sprawdź połączenie i spróbuj ponownie.</p><p class="subtle">${esc(window.ImperiumComms.state.error||'Konto musi być aktywne, aby otrzymywać ogłoszenia.')}</p><div class="denied-account">${esc(u.name)}</div><button class="goldbtn" id="retry-access">Sprawdź dostęp ponownie</button><button class="ghost" id="logout">Wyloguj się</button></section></main>`;
  document.getElementById('retry-access').onclick=()=>loadCloudDB();
  document.getElementById('logout').onclick=()=>signOutCloud();
 }
