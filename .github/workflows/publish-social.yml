@@ -1,0 +1,96 @@
+name: Publish IMPERIUM People Network
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-social.yml']
+  pull_request:
+    paths: ['.github/workflows/publish-social.yml', 'social.*', 'backend/social.sql', 'tests/social-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: imperium-social-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: social
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check web bundle and application shell
+        run: |
+          set -euo pipefail
+          for file in app.js social.js communications.js startup.js sw.js; do node --check "$file"; done
+          for file in app.js social.js social.css communications.js communications.css startup.js biotech.css styles.css config.js index.html manifest.webmanifest sw.js icons/icon.svg; do cmp "$file" "android-wrapper/app/src/main/assets/$file"; done
+          npm install --prefix "$RUNNER_TEMP/social-test" jsdom@26.1.0 playwright@1.58.2 --no-audit --no-fund
+          NODE_PATH="$RUNNER_TEMP/social-test/node_modules" node tests/biotech-dom.cjs
+      - name: Verify contacts and private conversations in PostgreSQL
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: fixture-only
+          PGDATABASE: social
+        run: |
+          psql -v ON_ERROR_STOP=1 --single-transaction -f tests/communications-db-fixture.sql -f tests/social-db-fixture.sql -f backend/profile-messages.sql -f backend/biotech-owner-access.sql -f backend/communications.sql -f backend/social.sql -f backend/social.sql -f tests/social-db.sql -f tests/communications-db.sql
+          test "$(psql -Atqc 'select count(*) from profile_messages')" = 0
+      - name: Verify avatars, conversations and responsive layouts
+        env:
+          QA_OUTPUT: ${{ runner.temp }}/social-screenshots
+        run: |
+          "$RUNNER_TEMP/social-test/node_modules/.bin/playwright" install --with-deps chromium
+          NODE_PATH="$RUNNER_TEMP/social-test/node_modules" node tests/social-browser.cjs
+          NODE_PATH="$RUNNER_TEMP/social-test/node_modules" node tests/biotech-browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: IMPERIUM-Social-screenshots
+          path: ${{ runner.temp }}/social-screenshots
+          if-no-files-found: ignore
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Allocate web version
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          version="$(psql "$SUPABASE_DB_URL" -Atqc 'select greatest(coalesce(max(version),0)+1,49) from public.app_updates')"
+          echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Package automatic update
+        run: |
+          set -euo pipefail
+          mkdir -p package/icons package/sounds
+          for file in index.html app.js startup.js biotech.css communications.js communications.css social.js social.css styles.css config.js manifest.webmanifest sw.js invoice-format.js invoice-pdf.js pdf-lib.min.js fontkit.umd.min.js invoice-font-data.js invoice-font-LICENSE.txt pdf-lib-LICENSE.md fontkit-LICENSE.txt pdf.min.mjs pdf.worker.min.mjs pdfjs-LICENSE.txt salary-aurelia.webp; do cp "android-wrapper/app/src/main/assets/$file" package/; done
+          cp android-wrapper/app/src/main/assets/icons/icon.svg package/icons/
+          cp android-wrapper/app/src/main/assets/sounds/imperium_notification.mp3 package/sounds/
+          (cd package && zip -qr "../imperium-web-${WEB_VERSION}.zip" .)
+      - name: Upload inactive update package
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          curl --fail-with-body -X POST "https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" -H "apikey: $SUPABASE_SECRET_KEY" -H 'Content-Type: application/zip' -H 'x-upsert: true' --data-binary "@imperium-web-${WEB_VERSION}.zip"
+      - name: Verify production privacy and activate atomically
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/activate-social.sql <<'SQL'
+          update public.app_updates set active=false where active=true;
+          insert into public.app_updates(version,version_name,package_url,active)
+          values (:'version'::integer,'IMPERIUM · Kontakty · Prywatne wiadomości',:'package_url',true);
+          SQL
+          psql "$SUPABASE_DB_URL" --single-transaction -v ON_ERROR_STOP=1 -v version="$WEB_VERSION" -v package_url="https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" -f backend/social.sql -f tests/social-db.sql -f /tmp/activate-social.sql
+          psql "$SUPABASE_DB_URL" -Atqc 'select version,version_name,active from public.app_updates where active=true'

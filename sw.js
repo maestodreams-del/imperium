@@ -1,5 +1,5 @@
-const CACHE='imperium-communications-20261011';
-const ASSETS=['./','./index.html','./styles.css','./biotech.css','./startup.js','./config.js','./app.js','./communications.js','./communications.css','./manifest.webmanifest','./icons/icon.svg'];
+const CACHE='imperium-social-20261011';
+const ASSETS=['./','./index.html','./styles.css','./biotech.css','./startup.js','./config.js','./app.js','./communications.js','./communications.css','./social.js','./social.css','./manifest.webmanifest','./icons/icon.svg'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 // Never cache authentication, API responses or private documents.

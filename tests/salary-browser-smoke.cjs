@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 async function openTab(page,tab){await page.locator('#module-menu').click();await page.locator(`.module-grid [data-tab="${tab}"]`).click();}
 const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
+function historicalApp(){return fs.readFileSync('app.js','utf8').replace('const OWNER_ONLY_ACCESS = true;','const OWNER_ONLY_ACCESS = false;').replace("['settings','Ustawienia']];return","['settings','Ustawienia'],['salary','Wynagrodzenia'],['attendance','Meldunek']];return").replace("['tasks','game','notice','invoices','activity','attendance','salary']","['tasks','game','notice','invoices','activity']");}
 
 (async () => {
   const browser = await chromium.launch({headless:true});
@@ -11,11 +12,12 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
   const errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   // Exercise the retained local payroll model in an isolated response only.
+  // Test-only navigation exposes the retained historical payroll components. These tabs are removed in production.
   // Production keeps OWNER_ONLY_ACCESS=true; owner gate coverage is in biotech tests.
   await context.route('**/*',route => {
     const u=new URL(route.request().url());
     if(u.origin!==url)return route.abort();
-    if(u.pathname==='/app.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync('app.js','utf8').replace('const OWNER_ONLY_ACCESS = true;','const OWNER_ONLY_ACCESS = false;')});
+    if(u.pathname==='/app.js')return route.fulfill({contentType:'text/javascript',body:historicalApp()});
     return route.continue();
   });
   await context.addInitScript(() => {
@@ -84,6 +86,7 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
   await cloud.route('**/*',async route=>{
     const request=route.request(),u=new URL(request.url());
     if(u.origin===url){
+      if(u.pathname==='/app.js')return route.fulfill({contentType:'text/javascript',body:historicalApp()});
       if(u.pathname==='/config.js')return route.fulfill({contentType:'text/javascript',body:'window.IMPERIUM_CONFIG={DEFAULT_SUPABASE_URL:"https://payroll-test.invalid",DEFAULT_SUPABASE_ANON_KEY:"nonproduction-fixture"}'});
       return route.continue();
     }
