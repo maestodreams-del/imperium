@@ -8,6 +8,7 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
   const items=[{id:'11111111-1111-4111-8111-111111111111',title:'Nowy rozdział IMPERIUM',body:'Wszystkie ważne informacje od teraz w jednym miejscu.\n\nPrzeczytaj ogłoszenie i zaznacz potwierdzenie poniżej. <img src=x onerror=alert(1)>',author:'Andrzej',created_at:'2026-10-11T16:00:00Z',archived_at:null,system_notice:false,is_recipient:true,read_at:null,receipts:[{profile_id:'u-admin',name:'Andrzej',active:true,read_at:null},{profile_id:'u-zenon',name:'Zenon',active:true,read_at:null}]}];
   page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(()=>{window.nativeCalls=[];window.AndroidBridge={setAnnouncementUnread:n=>window.nativeCalls.push(['unread',n]),clearAnnouncements:()=>window.nativeCalls.push(['clear']),openBrowser:u=>window.nativeCalls.push(['browser',u]),requestNotificationPermission:()=>{}};});
+  await page.route('https://tile.openstreetmap.org/**',r=>r.fulfill({status:204,body:''}));
   await page.route('https://backend.invalid/**',async r=>{
    const name=new URL(r.request().url()).pathname.split('/').at(-1);let data=[];
    if(name==='imperium_access_status')data=owner;
@@ -23,7 +24,7 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
   await page.evaluate(async()=>{const t=window.biotechTest,s=t.state;s.mode='cloud';s.auth={access_token:'fixture',expires_at:Math.floor(Date.now()/1000)+3600,user:{id:'u-admin',email:'owner@example.test'}};s.db=t.seed();s.db.users[0].name='Andrzej';s.ownerAccess=true;s.verifiedOwnerId='u-admin';s.salaryManager=true;s.tab='announcements';await window.ImperiumComms.connect('u-admin');await window.ImperiumSocial.connect('u-admin');t.render()});
   await page.screenshot({path:`${out}/${width}-announcements.png`,fullPage:true});assert.equal(await page.locator('.bulletin-body img').count(),0,'Announcement HTML is text, never executable');
   assert.equal(await page.locator('[data-tab="tasks"],[data-tab="game"],[data-new-extra-mission]').count(),0);
-  const tabs=['announcements','browser','youtube','locations','inspections','rentals','important','chat','team','profile','settings'];
+  const tabs=['announcements','navigation','browser','youtube','locations','inspections','rentals','important','chat','team','profile','settings'];
   async function open(tab){if(width<861){await page.locator('#module-menu').click();await page.locator(`.module-grid [data-tab="${tab}"]`).click();}else await page.locator(`.bio-sidebar [data-tab="${tab}"]`).click();}
   for(const tab of tabs){await open(tab);const check=await page.evaluate(()=>({tab:window.biotechTest.state.tab,overflow:document.documentElement.scrollWidth>innerWidth+1}));assert.equal(check.tab,tab);assert.equal(check.overflow,false,`${width} ${tab} fits`);
    if(['browser','youtube'].includes(tab)){await page.locator('#web-address').fill(tab==='youtube'?'Umbrella music':'example.org');await page.locator('#web-launch button').click();const calls=await page.evaluate(()=>window.nativeCalls.filter(x=>x[0]==='browser'));assert.ok(calls.at(-1)[1].startsWith(tab==='youtube'?'https://m.youtube.com/results':'https://example.org'));}
@@ -38,4 +39,4 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
   failAck=false;await page.locator('[data-ack]:not(:checked)').first().check();await page.waitForFunction(()=>window.ImperiumComms.unread()===0);assert.equal(await page.evaluate(()=>window.nativeCalls.filter(x=>x[0]==='unread').at(-1)[1]),0,'Successful server receipt stops alert');
   await page.screenshot({path:`${out}/${width}-participant-read.png`,fullPage:true});assert.deepEqual(errors,[]);await context.close();
  }
-}finally{await browser.close()}console.log('PASS: 10-second splash; 11 owner modules; notices, publication, receipts, failed/successful acknowledgement and vibration stop; browser/YouTube bridge; removed tasks; participant isolation; mobile/desktop layouts.');})().catch(e=>{console.error(e);process.exitCode=1});
+}finally{await browser.close()}console.log('PASS: 10-second splash; 12 owner modules; notices, publication, receipts, failed/successful acknowledgement and vibration stop; browser/YouTube bridge; removed tasks; participant isolation; mobile/desktop layouts.');})().catch(e=>{console.error(e);process.exitCode=1});

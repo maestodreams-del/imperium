@@ -77,7 +77,7 @@ public class MainActivity extends Activity {
         if (web != null) web.post(this::hideSystemBars);
     }
 
-    @Override protected void onPause(){AnnouncementAlerts.foreground(this,false);super.onPause();}
+    @Override protected void onPause(){AnnouncementAlerts.foreground(this,false);if(navigation!=null)navigation.pause();super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(web!=null&&intent.getBooleanExtra("announcements",false))web.evaluateJavascript("window.dispatchEvent(new Event('imperium-open-announcements'))",null);}
     private boolean trustedAppPage(){String url=web==null?null:web.getUrl();if(url==null)return false;try{String path=Uri.parse(url).getPath();return url.startsWith("file:///android_asset/index.html")||(activeWebDir!=null&&path!=null&&new File(path).getCanonicalPath().equals(new File(activeWebDir,"index.html").getCanonicalPath()));}catch(Exception e){return false;}}
     @Override
@@ -93,13 +93,14 @@ public class MainActivity extends Activity {
     private static final String CHANNEL_ID = "imperium_alerts_v3";
 
     private WebView web;
+    private NavigationSupport navigation;
     private ValueCallback<Uri[]> fileCallback;
 private File updatesDir;
 private File activeWebDir;
 private File stagingWebDir;
 private static final String UPDATE_PREFS = "imperium_update_prefs";
 private static final String KEY_WEB_VERSION = "web_version";
-private static final int BUNDLED_WEB_VERSION = 48;
+private static final int BUNDLED_WEB_VERSION = 50;
 
 private int getInstalledWebVersion() {
     return getSharedPreferences(
@@ -441,9 +442,11 @@ private void loadImperium() {
         createNotificationChannel();
 
         web = new WebView(this);
+        navigation = new NavigationSupport(this, web, this::trustedAppPage);
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
+        s.setUserAgentString(s.getUserAgentString()+" IMPERIUM/6.1 (+https://github.com/maestodreams-del/imperium)");
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setAllowFileAccess(true);
@@ -455,7 +458,7 @@ private void loadImperium() {
             s.setAllowUniversalAccessFromFileURLs(true);
         }
 
-        web.clearCache(true);
+        // Retain normal HTTP cache headers for interactive map tiles.
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
                 String target=request.getUrl().toString();
@@ -838,7 +841,13 @@ channel.enableVibration(true);
         }
     }
 
+    @Override public void onRequestPermissionsResult(int code,String[] permissions,int[] results){super.onRequestPermissionsResult(code,permissions,results);if(code==NavigationSupport.PERMISSION_REQUEST&&navigation!=null)navigation.permissionResult();}
+    @Override protected void onDestroy(){if(navigation!=null)navigation.destroy();super.onDestroy();}
+
     public class AndroidBridge {
+        @JavascriptInterface public void startNavigationLocation(){runOnUiThread(()->{if(trustedAppPage())navigation.start();});}
+        @JavascriptInterface public void stopNavigationLocation(){runOnUiThread(()->{if(trustedAppPage())navigation.stop();});}
+        @JavascriptInterface public void speakNavigation(String text){runOnUiThread(()->{if(trustedAppPage())navigation.speak(text);});}
         @JavascriptInterface public void openBrowser(String url){runOnUiThread(()->{if(trustedAppPage())AnnouncementAlerts.openBrowser(MainActivity.this,url);});}
         @JavascriptInterface public void configureAnnouncements(String url,String key,String token){runOnUiThread(()->{if(trustedAppPage())AnnouncementAlerts.configure(MainActivity.this,url,key,token);});}
         @JavascriptInterface public void setAnnouncementUnread(int count){runOnUiThread(()->{if(trustedAppPage())AnnouncementAlerts.setUnread(MainActivity.this,count,false);});}
@@ -847,7 +856,7 @@ channel.enableVibration(true);
         @JavascriptInterface
         public String diagnostics() {
             String currentUrl = web != null ? web.getUrl() : "";
-            return "APK=6.0.0; bundled=" + BUNDLED_WEB_VERSION
+            return "APK=6.1.0; bundled=" + BUNDLED_WEB_VERSION
                     + "; installedWeb=" + getInstalledWebVersion()
                     + "; activeIndex=" + (activeWebDir != null && new File(activeWebDir, "index.html").exists())
                     + "; url=" + currentUrl;

@@ -23,16 +23,16 @@ const make=()=>new JSDOM(html,{url:'https://imperium.test/',runScripts:'outside-
  let access=true;
  w.fetch=async(url,opts={})=>{requests.push({url,method:opts.method});return {ok:true,status:200,text:async()=>JSON.stringify(url.includes('imperium_access_status')?access:url.includes('imperium_comms_feed')?{active:true,owner:access,announcements:[]}:url.includes('imperium_social_directory')?{active:true,contacts:[{id:'u-admin',name:'Andrzej',active:true,owner:true},{id:'u-zenon',name:'Zenon',active:true,owner:false}]}:[])};};
  w.document.getElementById('boot-screen').remove();
- for(const f of ['communications.js','social.js'])w.eval(fs.readFileSync(f,'utf8'));
+ for(const f of ['communications.js','social.js','navigation-core.js','navigation.js'])w.eval(fs.readFileSync(f,'utf8'));
  let code=fs.readFileSync('app.js','utf8');const marker='  init();\n})();';assert.ok(code.includes(marker));code=code.replace(marker,'  window.biotechTest={state,render,seed,loadCloudDB,cloudFetch,hasOwnerAccess,signUpCloud};\n'+marker);w.eval(code);
  const t=w.biotechTest,{state}=t;
  assert.ok(w.document.getElementById('owner-login-form'));assert.equal(w.document.getElementById('cloud-register'),null);assert.equal(w.document.getElementById('start-demo'),null);
  state.mode='cloud';state.auth={access_token:'fixture-token',expires_at:Math.floor(Date.now()/1000)+3600,user:{id:'u-admin',email:'owner@example.test'}};
  state.db=t.seed();state.ownerAccess=true;state.verifiedOwnerId='u-admin';state.salaryManager=true;await w.ImperiumComms.connect('u-admin');await w.ImperiumSocial.connect('u-admin');
- const tabs=['announcements','browser','youtube','locations','inspections','rentals','important','chat','team','profile','settings'];
+ const tabs=['announcements','navigation','browser','youtube','locations','inspections','rentals','important','chat','team','profile','settings'];
  for(const tab of tabs){state.tab=tab;t.render();assert.ok(w.document.querySelector('.bio-shell'),tab);assert.ok(w.document.querySelector(`.bio-sidebar [data-tab="${tab}"].active`),tab);assert.ok(w.document.querySelector('.content').textContent.trim(),tab);assert.equal(w.document.querySelector('.access-denied'),null,tab);}
  assert.equal(w.document.querySelector('[data-tab=salary],[data-tab=invoices],[data-tab=attendance],[data-tab=activity]'),null);
- state.tab='announcements';t.render();w.document.getElementById('module-menu').click();assert.equal(w.document.querySelectorAll('.module-grid [data-tab]').length,11);w.document.querySelector('.module-grid [data-tab="rentals"]').click();assert.equal(state.tab,'rentals');assert.equal(w.document.querySelector('.module-drawer'),null);
+ state.tab='announcements';t.render();w.document.getElementById('module-menu').click();assert.equal(w.document.querySelectorAll('.module-grid [data-tab]').length,12);w.document.querySelector('.module-grid [data-tab="rentals"]').click();assert.equal(state.tab,'rentals');assert.equal(w.document.querySelector('.module-drawer'),null);
  state.tab='announcements';t.render();w.document.querySelector('[data-compose]').click();assert.ok(w.document.getElementById('announcement-title'));assert.ok(w.document.getElementById('announcement-body'));w.ImperiumComms.state.compose=false;
  // A different administrator and a forged/stale owner flag are denied.
  state.modal=null;state.auth.user.id='u-zenon';state.tab='salary';t.render();assert.ok(w.document.querySelector('.access-denied'));assert.equal(w.document.querySelector('[data-tab]'),null);
@@ -44,5 +44,5 @@ const make=()=>new JSDOM(html,{url:'https://imperium.test/',runScripts:'outside-
  state.auth.user.id='u-admin';state.ownerAccess=true;state.verifiedOwnerId='u-admin';access=false;requests.length=0;
  await t.loadCloudDB();assert.equal(state.db.tasks.length,0);assert.equal(state.db.users.length,1);assert.equal(state.ownerAccess,false);assert.ok(w.document.querySelector('.participant-shell'));assert.ok(requests.every(x=>x.url.includes('imperium_access_status')||x.url.includes('app_updates')||x.url.includes('imperium_comms_feed')||x.url.includes('imperium_social_')));
  assert.deepEqual(errors,[]);d.window.close();
- console.log('PASS: ten-second first launch, repeat launch, 11 owner modules and 4 shared participant modules, mobile menu, announcement editor, denied non-owner/admin, stale-session guard and server revocation.');
+ console.log('PASS: ten-second first launch, repeat launch, 12 owner modules and 5 shared participant modules, mobile menu, announcement editor, denied non-owner/admin, stale-session guard and server revocation.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
