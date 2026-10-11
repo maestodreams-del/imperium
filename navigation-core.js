@@ -21,7 +21,7 @@
     paid=true;const fares=toll.fares||[];const ids=fares.map(f=>f.id).filter(Boolean);
     if(ids.length&&ids.every(id=>seen.has(id)))continue;
     if(ids.some(id=>seen.has(id)))unknown=true; // Ambiguous partial group overlap must never inflate a total silently.
-    ids.forEach(id=>seen.add(id));const options=fares.map(f=>{const p=f.convertedPrice?.currency===currency?f.convertedPrice:f.price?.currency===currency?f.price:null;return {name:f.name||toll.tollSystem||'Opłata drogowa',methods:f.paymentMethods||[],reason:f.reason,price:p&&p.type==='value'&&finite(p.value)&&Number(p.value)>=0?Number(p.value):null};});
+    ids.forEach(id=>seen.add(id));const options=fares.map(f=>{const p=f.convertedPrice?.currency===currency?f.convertedPrice:f.price?.currency===currency?f.price:null;return {name:f.name||toll.tollSystem||'Opłata drogowa',methods:f.paymentMethods||[],reason:f.reason,price:p&&p.type==='value'&&typeof p.value==='number'&&finite(p.value)&&Number(p.value)>=0?Number(p.value):null};});
     const values=options.map(f=>f.price).filter(n=>n!==null);const complete=values.length>0&&values.length===options.length;
     if(!complete)unknown=true;const min=values.length?Math.min(...values):null,max=values.length?Math.max(...values):null;
     if(min!==null){low+=min;high+=max;}

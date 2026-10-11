@@ -15,5 +15,6 @@ r={sections:[{...section(),spans:[{tollSystems:[0]}]}]};assert.equal(C.tolls(r,'
 r={sections:[{...section(),notices:[{severity:'critical',code:'violatedVehicleRestriction',title:'Height restriction'}]}]};assert.equal(C.parseRoute(r,'EUR','allow').blocked,true);
 r={sections:[section([{fares:[fare('pln',20,'PLN')]}])]};assert.equal(C.tolls(r,'EUR').unknown,true,'No invented exchange rate');
 r.sections[0].tolls[0].fares[0].convertedPrice={type:'value',currency:'EUR',value:4.5};assert.equal(C.tolls(r,'EUR').low,4.5);
+assert.equal(C.tolls({sections:[section([{fares:[fare('missing',null)]}])]},'EUR').unknown,true,'Null prices are not zero');
 assert.ok(C.closest([[52,14],[52,15]],[52,14.5]).distance<1);assert.ok(C.distance([52,14],[52,15])>60000);
 console.log('PASS: official polyline vector, mixed currencies, alternative fares, duplicate toll IDs, cost/km, missing tariffs, strict free mode and critical truck restrictions.');
