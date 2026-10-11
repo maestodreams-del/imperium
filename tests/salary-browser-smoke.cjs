@@ -42,7 +42,7 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
   await page.locator('#salary-reason').fill(' ');
   await page.locator('#salary-add-adjustment').click();
   assert.equal(await page.locator('#salary-history-rows>div').count(),2);
-  for(const tab of ['tasks','attendance','team','profile','rentals','important','salary']){
+  for(const tab of ['announcements','attendance','team','profile','rentals','important','salary']){
     await openTab(page,tab);
     assert.equal(await page.locator('.bio-mobile-nav').count(),1,`${tab} renders`);
   }
@@ -90,7 +90,8 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
     if(u.hostname!=='payroll-test.invalid')return route.abort();
     const table=u.pathname.split('/').at(-1);
     let result=[];
-    if(table==='imperium_access_status'||table==='salary_is_manager')result=true;
+    if(table==='imperium_comms_feed')result={active:true,owner:true,announcements:[]};
+    else if(table==='imperium_access_status'||table==='salary_is_manager')result=true;
     else if(table==='locations')result=[{id:'test-location',name:'Test site',active:true}];
     else if(table==='profile_locations')result=[{profile_id:'zenon',location_id:'test-location'}];
     else if(table==='profiles')result=[{id:'owner',full_name:'Owner',role:'admin',active:true},{id:'zenon',full_name:'Zenon',role:'worker',active:true}];

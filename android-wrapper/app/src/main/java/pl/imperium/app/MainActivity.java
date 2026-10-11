@@ -73,9 +73,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        AnnouncementAlerts.foreground(this,true);
         if (web != null) web.post(this::hideSystemBars);
     }
 
+    @Override protected void onPause(){AnnouncementAlerts.foreground(this,false);super.onPause();}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(web!=null&&intent.getBooleanExtra("announcements",false))web.evaluateJavascript("window.dispatchEvent(new Event('imperium-open-announcements'))",null);}
+    private boolean trustedAppPage(){String url=web==null?null:web.getUrl();if(url==null)return false;try{String path=Uri.parse(url).getPath();return url.startsWith("file:///android_asset/index.html")||(activeWebDir!=null&&path!=null&&new File(path).getCanonicalPath().equals(new File(activeWebDir,"index.html").getCanonicalPath()));}catch(Exception e){return false;}}
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
@@ -95,7 +99,7 @@ private File activeWebDir;
 private File stagingWebDir;
 private static final String UPDATE_PREFS = "imperium_update_prefs";
 private static final String KEY_WEB_VERSION = "web_version";
-private static final int BUNDLED_WEB_VERSION = 1;
+private static final int BUNDLED_WEB_VERSION = 48;
 
 private int getInstalledWebVersion() {
     return getSharedPreferences(
@@ -453,6 +457,12 @@ private void loadImperium() {
 
         web.clearCache(true);
         web.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request){
+                String target=request.getUrl().toString();
+                if(target.startsWith("file:///android_asset/")||(activeWebDir!=null&&target.startsWith("file://"+activeWebDir.getAbsolutePath()+"/")))return false;
+                if(BrowserPolicy.webUrl(target))try{startActivity(new Intent(Intent.ACTION_VIEW,request.getUrl()));}catch(Exception ignored){}
+                return true;
+            }
             @Override
             public WebResourceResponse shouldInterceptRequest(
                     WebView view,
@@ -829,10 +839,15 @@ channel.enableVibration(true);
     }
 
     public class AndroidBridge {
+        @JavascriptInterface public void openBrowser(String url){runOnUiThread(()->{if(trustedAppPage())AnnouncementAlerts.openBrowser(MainActivity.this,url);});}
+        @JavascriptInterface public void configureAnnouncements(String url,String key,String token){runOnUiThread(()->{if(trustedAppPage())AnnouncementAlerts.configure(MainActivity.this,url,key,token);});}
+        @JavascriptInterface public void setAnnouncementUnread(int count){runOnUiThread(()->{if(trustedAppPage())AnnouncementAlerts.setUnread(MainActivity.this,count,false);});}
+        @JavascriptInterface public void clearAnnouncements(){runOnUiThread(()->{if(trustedAppPage())AnnouncementAlerts.clear(MainActivity.this);});}
+
         @JavascriptInterface
         public String diagnostics() {
             String currentUrl = web != null ? web.getUrl() : "";
-            return "APK=5.2.4; bundled=" + BUNDLED_WEB_VERSION
+            return "APK=6.0.0; bundled=" + BUNDLED_WEB_VERSION
                     + "; installedWeb=" + getInstalledWebVersion()
                     + "; activeIndex=" + (activeWebDir != null && new File(activeWebDir, "index.html").exists())
                     + "; url=" + currentUrl;
