@@ -32,6 +32,12 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
    else await page.locator(`.bio-sidebar [data-tab="${tab}"]`).click();
    const check=await page.evaluate(()=>({tab:window.biotechTest.state.tab,overflow:document.documentElement.scrollWidth>innerWidth+1,body:getComputedStyle(document.body).backgroundColor}));
    assert.equal(check.tab,tab);assert.equal(check.overflow,false,`${width} ${tab} fits`);assert.equal(check.body,'rgb(8, 12, 16)');
+   if(tab==='chat'){
+    const composer=await page.locator('.comms-compose').boundingBox();
+    const dock=width<861?await page.locator('.bio-mobile-nav').boundingBox():{y:900};
+    assert.ok(composer.y+composer.height<=dock.y,`${width} chat controls stay above navigation`);
+    await page.locator('#chat-input').fill('Kontrola połączenia');
+   }
    await page.screenshot({path:`${out}/${width}-${tab}.png`,fullPage:true});
   }
   if(width<861){await page.locator('#module-menu').click();await page.screenshot({path:`${out}/${width}-modules.png`});await page.locator('.module-grid [data-tab="tasks"]').click();}

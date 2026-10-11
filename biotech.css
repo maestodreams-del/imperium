@@ -111,3 +111,12 @@ body.biotech .task-sanction{color:#ffb8be!important;background:#291920!important
 body.biotech .mission-card .task-actions{flex-wrap:wrap!important;gap:6px!important}body.biotech .mission-card .task-actions button{white-space:nowrap!important;flex:1 0 auto!important;min-width:0!important;letter-spacing:0!important;padding:10px!important}
 body.biotech .mission-data{grid-template-columns:repeat(2,minmax(0,1fr))!important}body.biotech .mission-data span{white-space:nowrap!important}
 body.biotech .salary-chest{filter:none!important}body.biotech .salary-chest-lid{background:#192732!important;border-color:#354b5b!important;border-radius:8px 8px 0 0!important;box-shadow:none!important}body.biotech .salary-chest-body{background:linear-gradient(130deg,#18242e,#111922)!important;border-color:#354b5b!important;border-top:2px solid var(--bio-red)!important;border-radius:0 0 8px 8px!important;color:#c2ced8!important}body.biotech .salary-chest-body b{color:var(--bio-text)!important}
+
+body.biotech :is(.progress-module,.profile-history,.inspection-summary>div,.attendance-live-row,.attendance-row,.attendance-active>div,.comms-compose,.comms-input-wrap,.comms-emblem,.chat-preview,.chat-file,.chat-delete){background:var(--bio-inset)!important;color:var(--bio-text)!important;border-color:var(--bio-line)!important;box-shadow:none!important;border-radius:6px!important}
+body.biotech .hero{background:none!important;border:0!important;box-shadow:none!important}
+body.biotech :is(.progress-head b,.progress-head strong,.profile-balance b,.profile-monogram,.inspection-summary b,.attendance-live-row strong,.attendance-times b,.attendance-active strong){color:var(--bio-text)!important}
+body.biotech :is(.progress-head span,.progress-module small,.inspection-summary span,.badge,.mini-metrics span,.profile-section-head>span,.profile-history .history-row em){color:var(--bio-muted)!important;border-color:#3d4c59!important}
+body.biotech :is(.coin-mini,.metric-bad){background:#202a31!important;color:#c5d3dc!important}body.biotech .inspection-expired b{color:#ff8994!important}body.biotech .inspection-soon b{color:#f2c56d!important}
+body.biotech .progress-track{background:#25313b!important}body.biotech .progress-track i{background:var(--bio-red)!important;box-shadow:none!important}
+body.biotech .bio-shell .comms-page{height:calc(100dvh - 174px)!important;min-height:300px}
+@media(max-width:860px){body.biotech .bio-shell .comms-page{height:calc(100dvh - 218px - env(safe-area-inset-bottom))!important}}
