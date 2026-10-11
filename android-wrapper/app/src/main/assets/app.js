@@ -138,7 +138,7 @@ function hasOwnerAccess(){
 }
 function reductionAccess(){return {recipient:false,owner:hasOwnerAccess(),locked:OWNER_ONLY_ACCESS&&!hasOwnerAccess()};}
 function umbrellaMark(){return '<img class="umbrella-mark" src="icons/icon.svg" alt="Umbrella" width="48" height="48">';}
-function moduleItems(){const items=[['announcements','Ogłoszenia'],['browser','Przeglądarka'],['youtube','YouTube'],['locations','Obiekty'],['inspections','Przeglądy'],['rentals','Najem'],['important','Ważne'],['chat','Wiadomości'],['team','Kontakty'],['profile','Mój profil'],['settings','Ustawienia']];return hasOwnerAccess()||state.mode==='demo'?items:items.filter(([id])=>['announcements','chat','team','profile'].includes(id));}
+function moduleItems(){const items=[['announcements','Ogłoszenia'],['navigation','Nawigacja'],['browser','Przeglądarka'],['youtube','YouTube'],['locations','Obiekty'],['inspections','Przeglądy'],['rentals','Najem'],['important','Ważne'],['chat','Wiadomości'],['team','Kontakty'],['profile','Mój profil'],['settings','Ustawienia']];return hasOwnerAccess()||state.mode==='demo'?items:items.filter(([id])=>['announcements','chat','team','profile','navigation'].includes(id));}
 function renderModuleNavigation(){
  const items=moduleItems();
  return `<aside class="bio-sidebar" aria-label="Moduły aplikacji"><div class="sidebar-label">CENTRUM OPERACYJNE</div>${items.map(([id,label])=>nav(id,label)).join('')}<div class="sidebar-footer"><span class="bio-status-dot"></span> ${hasOwnerAccess()?'Dostęp właściciela':'Sieć uczestników'}<small>IMPERIUM · BIOTECH DIVISION</small></div></aside>
@@ -274,7 +274,7 @@ async function refreshSession(){
 async function cloudFetch(path,{method='GET',body=null,headers={},raw=false,auth=true}={}){
   if(OWNER_ONLY_ACCESS && !hasOwnerAccess() && !path.startsWith('/auth/v1/')){
     const permitted=(method==='GET'&&(path.startsWith('/rest/v1/app_updates?')||path==='/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk')) ||
-      (method==='POST'&&['imperium_access_status','imperium_comms_feed','imperium_ack_announcement','imperium_register_notice_device','imperium_revoke_notice_device','imperium_social_directory','imperium_social_save_card','imperium_social_inbox','imperium_social_thread','imperium_social_send','imperium_social_read'].some(name=>path==='/rest/v1/rpc/'+name));
+      (method==='POST'&&['imperium_access_status','imperium_comms_feed','imperium_ack_announcement','imperium_register_notice_device','imperium_revoke_notice_device','imperium_social_directory','imperium_social_save_card','imperium_social_inbox','imperium_social_thread','imperium_social_send','imperium_social_read','imperium_navigation_status','imperium_navigation_search','imperium_navigation_route'].some(name=>path==='/rest/v1/rpc/'+name));
     if(!permitted)throw new Error('Dostęp do aplikacji jest obecnie ograniczony do właściciela.');
   }
   const c=cloudConfig(); if(!c) throw new Error('Brak konfiguracji chmury.');
@@ -298,6 +298,7 @@ async function signInCloud(email,password){
 }
 async function signUpCloud(){throw new Error('Rejestracja jest obecnie zamknięta.');}
 async function signOutCloud(){
+  window.ImperiumNavigation.disconnect();
   window.ImperiumSocial.disconnect();
   await window.ImperiumComms.logout();
   try{await cloudFetch('/auth/v1/logout',{method:'POST'});}catch(e){}
@@ -410,7 +411,7 @@ async function loadCloudDB({silent=false}={}){
     if(!silent){
   checkImperiumUpdate().catch(()=>{});
 }
-    if(!window.ImperiumComms.state.compose && !window.ImperiumSocial.state.editing && !document.activeElement?.matches('input,textarea,select') && (!silent || (!state.modal && state.tab!=='chat' && state.tab!=='salary' && !(state.tab==='profile'&&(publicProfileId||state.profileView==='messages')) && !document.activeElement?.closest('.shift-admin')))) render();
+    if(state.tab!=='navigation' && !window.ImperiumComms.state.compose && !window.ImperiumSocial.state.editing && !document.activeElement?.matches('input,textarea,select') && (!silent || (!state.modal && state.tab!=='chat' && state.tab!=='salary' && !(state.tab==='profile'&&(publicProfileId||state.profileView==='messages')) && !document.activeElement?.closest('.shift-admin')))) render();
     if(isAdmin() && state.db.locations.length===0){ try{await cloudFetch('/rest/v1/rpc/seed_default_locations',{method:'POST',body:{}});await sleep(300);return loadCloudDB({silent:false});}catch(e){} }
   }catch(e){
     state.loading=false;state.cloudError=e.message;state.ownerAccess=false;state.verifiedOwnerId=null;
@@ -469,7 +470,7 @@ function imperialIcon(id){
     invoices:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3zM8 8h8M8 12h8M8 16h5"/></svg>',
     important:'<svg viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3zM12 9v5M12 17v1"/></svg>',
     activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
-    announcements:'<svg viewBox="0 0 24 24"><path d="M4 8h5l10-4v16L9 16H4zM8 16l2 5h3l-2-5M22 8v8"/></svg>',
+    navigation:'<svg viewBox="0 0 24 24"><path d="m12 3 8 18-8-5-8 5 8-18Z"/></svg>',announcements:'<svg viewBox="0 0 24 24"><path d="M4 8h5l10-4v16L9 16H4zM8 16l2 5h3l-2-5M22 8v8"/></svg>',
     browser:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c-5 5-5 13 0 18M12 3c5 5 5 13 0 18"/></svg>',
     youtube:'<svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3z"/></svg>',
     modules:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
@@ -480,7 +481,7 @@ function imperialIcon(id){
     profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4.2 2.8-7 7-7s7 2.8 7 7"/></svg>',salary:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M16 12h5v5h-5z"/><circle cx="17" cy="14.5" r=".6"/></svg>',settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
   };return p[id]||'';
 }
-function nav(id,label,extra=''){const locked=reductionAccess().locked&&!['announcements','team','chat','profile'].includes(id);return `<button class="navitem ${state.tab===id?'active':''} ${extra} ${locked?'navitem-locked':''}" data-tab="${id}" ${locked?'disabled aria-disabled="true" title="Sekcja zablokowana przez kierownictwo"':''}><i>${imperialIcon(id)}</i><span>${label}</span>${id==='chat'?window.ImperiumSocial.badge():''}</button>`;}
+function nav(id,label,extra=''){const locked=reductionAccess().locked&&!['announcements','team','chat','profile','navigation'].includes(id);return `<button class="navitem ${state.tab===id?'active':''} ${extra} ${locked?'navitem-locked':''}" data-tab="${id}" ${locked?'disabled aria-disabled="true" title="Sekcja zablokowana przez kierownictwo"':''}><i>${imperialIcon(id)}</i><span>${label}</span>${id==='chat'?window.ImperiumSocial.badge():''}</button>`;}
 function chip(id,label){return `<button class="chip ${state.filter===id?'active':''}" data-filter="${id}">${label}</button>`;}
 function render(){
   if(state.loading)return;
@@ -515,12 +516,12 @@ function render(){
     <div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · BIOTECH DIVISION</small></div></div>
     <div class="top-actions">${profileMessengerButton()}<button class="social-avatar-button" data-contact="${esc(u.id)}" aria-label="Moja karta kontaktu">${window.ImperiumSocial.avatar(window.ImperiumSocial.contact(u.id)||{name:u.name},'top-avatar')}</button><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">Dostęp właściciela</span>${hasOwnerAccess()?'<button class="command-add" data-compose aria-label="Nowe ogłoszenie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
   </div></header>
-  <main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1]||'Centrum operacyjne')}<small>PRIVATE TERMINAL</small></div>${state.tab==='announcements'?window.ImperiumComms.render():''}${state.tab==='browser'?window.ImperiumComms.browserPage(false):''}${state.tab==='youtube'?window.ImperiumComms.browserPage(true):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?window.ImperiumSocial.messagesPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1]||'Centrum operacyjne')}<small>PRIVATE TERMINAL</small></div>${state.tab==='announcements'?window.ImperiumComms.render():''}${state.tab==='navigation'?window.ImperiumNavigation.render():''}${state.tab==='browser'?window.ImperiumComms.browserPage(false):''}${state.tab==='youtube'?window.ImperiumComms.browserPage(true):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?window.ImperiumSocial.messagesPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
   ${renderModuleNavigation()}
   ${renderModal()}</div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');
   if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
-  bind();window.ImperiumSocial.bind();window.ImperiumComms.bind();if(['browser','youtube'].includes(state.tab))window.ImperiumComms.bindBrowser(state.tab==='youtube');
+  bind();window.ImperiumNavigation.bind();window.ImperiumSocial.bind();window.ImperiumComms.bind();if(['browser','youtube'].includes(state.tab))window.ImperiumComms.bindBrowser(state.tab==='youtube');
   document.getElementById('module-menu')?.addEventListener('click',()=>{state.moduleMenu=true;render();document.getElementById('close-modules')?.focus();});
   document.getElementById('close-modules')?.addEventListener('click',()=>{state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();});
   const drawer=app.querySelector('.module-drawer');
@@ -530,9 +531,9 @@ function render(){
 // Participants can use announcements, contact cards and private messages only.
 function renderRestrictedApp(u){
  if((window.ImperiumComms.state.active&&window.ImperiumComms.userId()===u.id)||(window.ImperiumSocial.state.active&&window.ImperiumSocial.userId()===u.id)){
-  if(!['announcements','team','chat','profile'].includes(state.tab))state.tab='announcements';state.modal=null;
-  app.innerHTML=`<div class="app bio-shell participant-shell"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · PEOPLE NETWORK</small></div></div><div class="top-actions">${profileMessengerButton()}<button class="ghost" id="logout" aria-label="Wyloguj się">Wyloguj</button></div></div></header><main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1])}</div>${state.tab==='announcements'?window.ImperiumComms.render():state.tab==='team'?window.ImperiumSocial.directoryPage():state.tab==='chat'?window.ImperiumSocial.messagesPage():window.ImperiumSocial.profilePage()}</main>${renderModuleNavigation()}</div>`;
-  window.ImperiumComms.bind();window.ImperiumSocial.bind();document.getElementById('logout').onclick=signOutCloud;
+  if(!['announcements','team','chat','profile','navigation'].includes(state.tab))state.tab='announcements';state.modal=null;
+  app.innerHTML=`<div class="app bio-shell participant-shell"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · PEOPLE NETWORK</small></div></div><div class="top-actions">${profileMessengerButton()}<button class="ghost" id="logout" aria-label="Wyloguj się">Wyloguj</button></div></div></header><main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1])}</div>${state.tab==='announcements'?window.ImperiumComms.render():state.tab==='navigation'?window.ImperiumNavigation.render():state.tab==='team'?window.ImperiumSocial.directoryPage():state.tab==='chat'?window.ImperiumSocial.messagesPage():window.ImperiumSocial.profilePage()}</main>${renderModuleNavigation()}</div>`;
+  window.ImperiumComms.bind();window.ImperiumNavigation.bind();window.ImperiumSocial.bind();document.getElementById('logout').onclick=signOutCloud;
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.moduleMenu=false;if(state.tab==='profile')window.ImperiumSocial.state.contact=u.id;render();});
   document.getElementById('module-menu').onclick=()=>{state.moduleMenu=true;render();document.getElementById('close-modules')?.focus();};
   document.getElementById('close-modules')?.addEventListener('click',()=>{state.moduleMenu=false;render();});return;
@@ -1886,6 +1887,7 @@ function initSeason(){
 }
 
 window.addEventListener('imperium-open-announcements',()=>{state.tab='announcements';window.ImperiumComms.refresh();render();});
+window.ImperiumNavigation.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),render,owner:hasOwnerAccess,user:()=>state.auth?.user?.id||state.demoSession?.userId,tab:()=>state.tab});
 window.ImperiumSocial.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),tab:()=>state.tab,owner:hasOwnerAccess,render,navigate:tab=>{state.tab=tab;state.moduleMenu=false;state.modal=null;render();}});
 window.ImperiumComms.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),config:cloudConfig,render,downloadApk:async()=>{if(!window.AndroidBridge?.saveFile){window.open('https://github.com/maestodreams-del/imperium/releases/download/v6.0.0/IMPERIUM-6.0.0.apk','_blank','noopener');return;}const response=await cloudFetch('/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk',{raw:true});const blob=await response.blob();await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{window.AndroidBridge.saveFile('IMPERIUM-6.0.0.apk','application/vnd.android.package-archive',String(reader.result).split(',')[1]);resolve();};reader.onerror=reject;reader.readAsDataURL(blob);});}});
 
