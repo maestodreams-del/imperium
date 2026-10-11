@@ -273,7 +273,7 @@ async function refreshSession(){
 }
 async function cloudFetch(path,{method='GET',body=null,headers={},raw=false,auth=true}={}){
   if(OWNER_ONLY_ACCESS && !hasOwnerAccess() && !path.startsWith('/auth/v1/')){
-    const permitted=(method==='GET'&&(path.startsWith('/rest/v1/app_updates?')||path==='/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk')) ||
+    const permitted=(method==='GET'&&(path.startsWith('/rest/v1/app_updates?')||path==='/storage/v1/object/app-updates/IMPERIUM-6.1.0.apk')) ||
       (method==='POST'&&['imperium_access_status','imperium_comms_feed','imperium_ack_announcement','imperium_register_notice_device','imperium_revoke_notice_device','imperium_social_directory','imperium_social_save_card','imperium_social_inbox','imperium_social_thread','imperium_social_send','imperium_social_read','imperium_navigation_status','imperium_navigation_search','imperium_navigation_route'].some(name=>path==='/rest/v1/rpc/'+name));
     if(!permitted)throw new Error('Dostęp do aplikacji jest obecnie ograniczony do właściciela.');
   }
@@ -528,7 +528,7 @@ function render(){
   drawer?.addEventListener('keydown',e=>{if(e.key==='Escape'){state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();}if(e.key==='Tab'){const buttons=[...drawer.querySelectorAll('button')];const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
 
 }
-// Participants can use announcements, contact cards and private messages only.
+// Participants share announcements, navigation, contact cards and private messages.
 function renderRestrictedApp(u){
  if((window.ImperiumComms.state.active&&window.ImperiumComms.userId()===u.id)||(window.ImperiumSocial.state.active&&window.ImperiumSocial.userId()===u.id)){
   if(!['announcements','team','chat','profile','navigation'].includes(state.tab))state.tab='announcements';state.modal=null;
@@ -1889,7 +1889,7 @@ function initSeason(){
 window.addEventListener('imperium-open-announcements',()=>{state.tab='announcements';window.ImperiumComms.refresh();render();});
 window.ImperiumNavigation.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),render,owner:hasOwnerAccess,user:()=>state.auth?.user?.id||state.demoSession?.userId,tab:()=>state.tab});
 window.ImperiumSocial.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),tab:()=>state.tab,owner:hasOwnerAccess,render,navigate:tab=>{state.tab=tab;state.moduleMenu=false;state.modal=null;render();}});
-window.ImperiumComms.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),config:cloudConfig,render,downloadApk:async()=>{if(!window.AndroidBridge?.saveFile){window.open('https://github.com/maestodreams-del/imperium/releases/download/v6.0.0/IMPERIUM-6.0.0.apk','_blank','noopener');return;}const response=await cloudFetch('/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk',{raw:true});const blob=await response.blob();await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{window.AndroidBridge.saveFile('IMPERIUM-6.0.0.apk','application/vnd.android.package-archive',String(reader.result).split(',')[1]);resolve();};reader.onerror=reject;reader.readAsDataURL(blob);});}});
+window.ImperiumComms.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),config:cloudConfig,render,downloadApk:async()=>{if(!window.AndroidBridge?.saveFile){window.open('https://github.com/maestodreams-del/imperium/releases/download/v6.1.0/IMPERIUM-6.1.0.apk','_blank','noopener');return;}const response=await cloudFetch('/storage/v1/object/app-updates/IMPERIUM-6.1.0.apk',{raw:true});const blob=await response.blob();await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{window.AndroidBridge.saveFile('IMPERIUM-6.1.0.apk','application/vnd.android.package-archive',String(reader.result).split(',')[1]);resolve();};reader.onerror=reject;reader.readAsDataURL(blob);});}});
 
 // The versioned first-run introduction lives outside the app render tree.
   init();
