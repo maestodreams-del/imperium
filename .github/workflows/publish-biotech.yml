@@ -1,0 +1,98 @@
+name: Publish IMPERIUM Biotech owner edition
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-biotech.yml']
+  pull_request:
+    paths: ['.github/workflows/publish-biotech.yml', 'biotech.css', 'startup.js', 'tests/biotech-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: imperium-biotech-publication
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify app and Android bundle
+        run: |
+          set -euo pipefail
+          node --check app.js
+          node --check startup.js
+          node --check game.js
+          node tests/quest-checks.cjs
+          for file in app.js startup.js biotech.css styles.css config.js index.html manifest.webmanifest sw.js icons/icon.svg; do
+            cmp "$file" "android-wrapper/app/src/main/assets/$file"
+          done
+          npm install --prefix "$RUNNER_TEMP/biotech-test" jsdom@26.1.0 playwright@1.58.2 --no-audit --no-fund
+          NODE_PATH="$RUNNER_TEMP/biotech-test/node_modules" node tests/biotech-dom.cjs
+      - name: Verify desktop and mobile screens
+        env:
+          QA_OUTPUT: ${{ runner.temp }}/biotech-screenshots
+        run: |
+          "$RUNNER_TEMP/biotech-test/node_modules/.bin/playwright" install --with-deps chromium
+          NODE_PATH="$RUNNER_TEMP/biotech-test/node_modules" node tests/biotech-browser.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: IMPERIUM-Biotech-screenshots
+          path: ${{ runner.temp }}/biotech-screenshots
+          if-no-files-found: ignore
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install database and archive tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client zip
+      - name: Allocate update version
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL"
+          version="$(psql "$SUPABASE_DB_URL" -Atqc 'select greatest(coalesce(max(version),0)+1,2) from public.app_updates')"
+          echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Package Android auto-update
+        run: |
+          set -euo pipefail
+          mkdir -p package/icons package/sounds
+          for file in index.html app.js startup.js biotech.css game.js quest-chapter.js quest-sketch.js styles.css config.js manifest.webmanifest sw.js invoice-format.js invoice-pdf.js pdf-lib.min.js fontkit.umd.min.js invoice-font-data.js invoice-font-LICENSE.txt pdf-lib-LICENSE.md fontkit-LICENSE.txt pdf.min.mjs pdf.worker.min.mjs pdfjs-LICENSE.txt salary-aurelia.webp; do
+            cp "android-wrapper/app/src/main/assets/$file" package/
+          done
+          cp android-wrapper/app/src/main/assets/icons/icon.svg package/icons/
+          cp android-wrapper/app/src/main/assets/sounds/imperium_notification.mp3 package/sounds/
+          (cd package && zip -qr "../imperium-web-${WEB_VERSION}.zip" .)
+      - name: Upload inactive package
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SUPABASE_URL: https://kpqhmmietusedznadjjy.supabase.co
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_SECRET_KEY"
+          curl --fail-with-body -X POST "$SUPABASE_URL/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" \
+            -H "Authorization: Bearer $SUPABASE_SECRET_KEY" -H "apikey: $SUPABASE_SECRET_KEY" \
+            -H 'Content-Type: application/zip' -H 'x-upsert: true' --data-binary "@imperium-web-${WEB_VERSION}.zip"
+      - name: Enforce owner access, verify policies and activate atomically
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/activate-biotech.sql <<'SQL'
+          update public.app_updates set active=false where active=true;
+          insert into public.app_updates(version,version_name,package_url,active)
+          values (:'version'::integer,'IMPERIUM Biotech · Umbrella · dostęp tylko dla właściciela',:'package_url',true);
+          SQL
+          psql "$SUPABASE_DB_URL" --single-transaction -v ON_ERROR_STOP=1 \
+            -v version="$WEB_VERSION" \
+            -v package_url="https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" \
+            -f backend/biotech-owner-access.sql -f tests/biotech-access-db.sql -f /tmp/activate-biotech.sql
+          psql "$SUPABASE_DB_URL" -Atqc 'select version,version_name,active from public.app_updates where active=true'

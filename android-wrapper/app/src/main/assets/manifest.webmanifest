@@ -1,10 +1,17 @@
 {
-  "name":"IMPERIUM",
-  "short_name":"IMPERIUM",
-  "description":"Zadania, lokalizacje i raporty pracowników",
-  "start_url":"./index.html",
-  "display":"standalone",
-  "background_color":"#070604",
-  "theme_color":"#0a0805",
-  "icons":[{"src":"icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+  "name": "IMPERIUM",
+  "short_name": "IMPERIUM",
+  "description": "IMPERIUM — prywatne centrum operacyjne",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#080c10",
+  "theme_color": "#080c10",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }

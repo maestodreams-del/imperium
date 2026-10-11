@@ -2,7 +2,7 @@
 'use strict';
 
 const BASE_CFG = window.IMPERIUM_CONFIG || {};
-const WORK_SECTIONS_LOCKED = true;
+const OWNER_ONLY_ACCESS = true;
 const app = document.getElementById('app');
 const fileInput = document.getElementById('file-input');
 const DB_KEY = 'imperium_db_v2';
@@ -17,6 +17,7 @@ let pollTimer = null;
 let bottomNavScrollLeft = 0;
 let salaryLoadSequence = 0;
 let state = {
+  ownerAccess: false, verifiedOwnerId: null, moduleMenu: false,
   mode: null, // null | demo | cloud
   tab: 'tasks', filter: 'all', workerPeriod: 'all', profileView: 'mine', teamMonth: new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), teamWorker: 'all', teamMonthRows: [], teamMonthLoaded: null, modal: null, taskId: null, locationId: null, userId: null,
   salaryManager:false, salaryCompensations:[], salaryAdjustments:[], salaryMonth:new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Warsaw'}).slice(0,7), salaryWorkerId:null, salaryPots:[], salaryAdditions:[], salaryLoadedMonth:null, salaryLoading:false, salarySaving:false, rentalExpanded:{}, pdfZoom:1,
@@ -132,9 +133,17 @@ function currentUser(){
 function getUser(id){ return state.db?.users?.find(u=>u.id===id); }
 function getLoc(id){ return state.db?.locations?.find(l=>l.id===id); }
 function isAdmin(){ return currentUser()?.role==='admin'; }
-function reductionAccess(){
-  const signedIn=!!currentUser();
-  return {recipient:signedIn,locked:WORK_SECTIONS_LOCKED&&signedIn};
+function hasOwnerAccess(){
+  return state.mode==='cloud' && state.ownerAccess===true && state.verifiedOwnerId===state.auth?.user?.id;
+}
+function reductionAccess(){return {recipient:false,owner:hasOwnerAccess(),locked:OWNER_ONLY_ACCESS&&!hasOwnerAccess()};}
+function umbrellaMark(){return '<img class="umbrella-mark" src="icons/icon.svg" alt="Umbrella" width="48" height="48">';}
+function moduleItems(){return [['tasks','Zadania'],['locations','Obiekty'],['inspections','Przeglądy'],['rentals','Najem'],['invoices','Faktury'],['important','Ważne'],['activity','Aktywność'],['attendance','Meldunek'],['chat','Czat'],['team','Zespół'],['profile','Profil'],['salary','Wynagrodzenia'],['game','Aurelia'],['settings','Ustawienia']];}
+function renderModuleNavigation(){
+ const items=moduleItems();
+ return `<aside class="bio-sidebar" aria-label="Moduły aplikacji"><div class="sidebar-label">CENTRUM OPERACYJNE</div>${items.map(([id,label])=>nav(id,label)).join('')}<div class="sidebar-footer"><span class="bio-status-dot"></span> Dostęp właściciela<small>IMPERIUM · BIOTECH DIVISION</small></div></aside>
+ <nav class="bio-mobile-nav" aria-label="Główna nawigacja">${[['tasks','Zadania'],['locations','Obiekty'],['important','Ważne'],['chat','Czat']].map(([id,label])=>nav(id,label)).join('')}<button class="navitem ${state.moduleMenu?'active':''}" id="module-menu" aria-label="Wszystkie moduły" aria-expanded="${state.moduleMenu}"><i>${imperialIcon('modules')}</i><span>Moduły</span></button></nav>
+ ${state.moduleMenu?`<div class="module-backdrop"><section class="module-drawer" role="dialog" aria-modal="true" aria-labelledby="module-title"><header><div><div class="eyebrow">IMPERIUM / MODUŁY</div><h2 id="module-title">Wszystko pod kontrolą</h2></div><button class="iconbtn" id="close-modules" aria-label="Zamknij moduły">×</button></header><div class="module-grid">${items.map(([id,label])=>nav(id,label)).join('')}</div></section></div>`:''}`;
 }
 function reductionNotice(){
   return `<section class="panel reduction-notice" role="status" style="padding:24px;margin-bottom:24px;border:2px solid #b42318"><h2>Komunikat kierownictwa</h2><p>W związku z drastycznym spadkiem zysków najwyższe kierownictwo podjęło decyzję o redukcji zatrudnienia.</p><p>Decyzja o zakończeniu współpracy dotyczy następujących osób:</p><ul><li>Nikolai Koshelyuk</li><li>Dmitry Sidorchuk</li><li>Vasiliy Abramenko</li><li>Nikita Odintsov</li><li>Vlad Ostapenko</li></ul><p>Ostatnim dniem naszej współpracy będzie <strong>31 października 2026 r.</strong></p><p>Dziękujemy za dotychczasową pracę i zaangażowanie.</p></section>`;
@@ -263,10 +272,10 @@ async function refreshSession(){
   const x=await r.json(); state.auth=x; if(!state.auth.expires_at&&x.expires_in)state.auth.expires_at=Math.floor(Date.now()/1000)+x.expires_in; localStorage.setItem(AUTH_KEY,JSON.stringify(state.auth));
 }
 async function cloudFetch(path,{method='GET',body=null,headers={},raw=false,auth=true}={}){
-  if(WORK_SECTIONS_LOCKED&&state.auth?.access_token&&!path.startsWith('/auth/v1/')){
-    const accountRead=method==='GET'&&(path.startsWith('/rest/v1/profiles?')||path.startsWith('/rest/v1/app_updates?'));
-    const bootstrap=method==='POST'&&path==='/rest/v1/rpc/bootstrap_first_admin';
-    if(!accountRead&&!bootstrap)throw new Error('Sekcje służbowe są zablokowane przez kierownictwo.');
+  if(OWNER_ONLY_ACCESS && !hasOwnerAccess() && !path.startsWith('/auth/v1/')){
+    const permitted=(method==='GET'&&path.startsWith('/rest/v1/app_updates?')) ||
+      (method==='POST'&&path==='/rest/v1/rpc/imperium_access_status');
+    if(!permitted)throw new Error('Dostęp do aplikacji jest obecnie ograniczony do właściciela.');
   }
   const c=cloudConfig(); if(!c) throw new Error('Brak konfiguracji chmury.');
   if(auth) await refreshSession();
@@ -283,20 +292,14 @@ async function signInCloud(email,password){
   const c=cloudConfig();
   const r=await fetch(`${c.url}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({email,password})});
   const x=await r.json().catch(()=>({})); if(!r.ok) throw new Error(x.error_description||x.msg||'Nie udało się zalogować.');
+  state.ownerAccess=false;state.verifiedOwnerId=null;state.db=null;
   state.auth=x; if(!state.auth.expires_at&&x.expires_in) state.auth.expires_at=Math.floor(Date.now()/1000)+x.expires_in; localStorage.setItem(AUTH_KEY,JSON.stringify(state.auth));
-  try{await cloudFetch('/rest/v1/rpc/bootstrap_first_admin',{method:'POST',body:{}});}catch(e){}
   await loadCloudDB(); startPolling();
 }
-async function signUpCloud(name,email,password){
-  const c=cloudConfig();
-  const r=await fetch(`${c.url}/auth/v1/signup`,{method:'POST',headers:{apikey:c.key,'Content-Type':'application/json'},body:JSON.stringify({email,password,data:{full_name:name}})});
-  const x=await r.json().catch(()=>({})); if(!r.ok) throw new Error(x.msg||x.error_description||'Nie udało się utworzyć konta.');
-  if(x.access_token){ state.auth=x; if(!state.auth.expires_at&&x.expires_in)state.auth.expires_at=Math.floor(Date.now()/1000)+x.expires_in;localStorage.setItem(AUTH_KEY,JSON.stringify(state.auth));try{await cloudFetch('/rest/v1/rpc/bootstrap_first_admin',{method:'POST',body:{}});}catch(e){} await loadCloudDB();startPolling(); }
-  else { toast('Konto utworzone. Jeśli w Supabase włączono potwierdzenie e-mail, potwierdź adres i zaloguj się.'); }
-}
+async function signUpCloud(){throw new Error('Rejestracja jest obecnie zamknięta.');}
 async function signOutCloud(){
   try{await cloudFetch('/auth/v1/logout',{method:'POST'});}catch(e){}
-  localStorage.removeItem(AUTH_KEY); state.auth=null; state.db=null; stopPolling(); render();
+  localStorage.removeItem(AUTH_KEY); state.auth=null; state.db=null;state.ownerAccess=false;state.verifiedOwnerId=null;state.moduleMenu=false; stopPolling(); render();
 }
 async function pgGet(query){ return cloudFetch(`/rest/v1/${query}`); }
   async function checkImperiumUpdate(){
@@ -341,21 +344,22 @@ function mapTaskRow(t,comments,atts){
 }
 function mapAtt(a){return {id:a.id,name:a.file_name,size:Number(a.size_bytes||0),type:a.mime_type||'application/octet-stream',path:a.storage_path,kind:a.kind,uploadedBy:a.uploaded_by,createdAt:a.created_at};}
 function mapRental(r){return {id:r.id,locationId:r.location_id,roomId:r.room_id||null,contractor:r.contractor,nip:r.nip||'',contactPerson:r.contact_person||'',phone:r.phone||'',email:r.email||'',registeredAddress:r.registered_address||'',premisesAddress:r.premises_address||'',premisesNumber:r.premises_number||'',paymentStatus:r.payment_status||'',startsOn:r.starts_on,endsOn:r.ends_on,indefinite:r.indefinite,areaSqm:Number(r.area_sqm),priceSqmNet:Number(r.price_sqm_net),priceSqmGross:Number(r.price_sqm_gross),parkingNet:Number(r.parking_net),parkingGross:Number(r.parking_gross),internetNet:Number(r.internet_net),internetGross:Number(r.internet_gross),cleaningNet:Number(r.cleaning_net||0),cleaningGross:Number(r.cleaning_gross||0)};}
-async function loadRestrictedAccount({silent=false}={}){
-  if(!silent)setLoading(true,'Logowanie…');
-  try{
-    const rows=await pgGet('profiles?select=id,full_name,role,active&id=eq.'+encodeURIComponent(state.auth.user.id));
-    state.db={version:2,users:rows.map(p=>({id:p.id,name:p.full_name,role:p.role,active:p.active,locationIds:[]})),locations:[],tasks:[],events:[],coinTransactions:[]};
-    state.cloudError='';state.loading=false;
-    if(!silent)checkImperiumUpdate().catch(()=>{});
-    render();
-  }catch(e){state.loading=false;state.cloudError=e.message;localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;render();toast('Nie udało się wczytać konta: '+e.message);}
+async function loadRestrictedAccount(){
+  const user=state.auth.user;
+  state.ownerAccess=false;state.verifiedOwnerId=null;state.salaryManager=false;
+  state.db={version:2,users:[{id:user.id,name:user.user_metadata?.full_name||user.email||'Użytkownik',role:'worker',active:true,locationIds:[]}],locations:[],tasks:[],events:[],coinTransactions:[]};
+  state.attendance=[];state.shifts=[];state.inspections=[];state.rentals=[];state.rentalRooms=[];state.rentalDocuments=[];state.invoiceSellers=[];state.invoiceDrafts=[];state.vouchers=[];state.rentalActions=[];state.importantAlerts=[];state.salaryCompensations=[];state.salaryAdjustments=[];state.salaryPots=[];state.salaryAdditions=[];
+  stopPolling();state.loading=false;render();
+  checkImperiumUpdate().catch(()=>{});
 }
 async function loadCloudDB({silent=false}={}){
   if(!state.auth?.access_token) return;
-  if(WORK_SECTIONS_LOCKED)return loadRestrictedAccount({silent});
   if(!silent) setLoading(true,'Synchronizacja danych…');
   try{
+    const access=await cloudFetch('/rest/v1/rpc/imperium_access_status',{method:'POST',body:{}});
+    if(access!==true)return loadRestrictedAccount();
+    state.ownerAccess=true;state.verifiedOwnerId=state.auth.user.id;
+    if(state.tab==='notice')state.tab='tasks';
     if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
     const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments,invoiceSellers,invoiceDrafts,salaryManager]=await Promise.all([
       pgGet('profiles?select=id,full_name,role,active,can_manage_rentals,can_add_inspections,can_create_tasks,can_view_team_hours,can_view_important,created_at&order=created_at.asc'),
@@ -404,7 +408,12 @@ async function loadCloudDB({silent=false}={}){
 }
     if(!silent || (!state.modal && state.tab!=='chat' && state.tab!=='salary' && !(state.tab==='profile'&&(publicProfileId||state.profileView==='messages')) && !document.activeElement?.closest('.shift-admin'))) render();
     if(isAdmin() && state.db.locations.length===0){ try{await cloudFetch('/rest/v1/rpc/seed_default_locations',{method:'POST',body:{}});await sleep(300);return loadCloudDB({silent:false});}catch(e){} }
-  }catch(e){ state.loading=false; state.cloudError=e.message; if(/sesja|JWT|token|expired/i.test(e.message)){localStorage.removeItem(AUTH_KEY);state.auth=null;} render(); }
+  }catch(e){
+    state.loading=false;state.cloudError=e.message;state.ownerAccess=false;state.verifiedOwnerId=null;
+    if(/sesja|JWT|token|expired/i.test(e.message)){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;renderCloudLogin();}
+    else if(state.auth?.user){await loadRestrictedAccount();toast('Nie udało się potwierdzić dostępu. Spróbuj ponownie.');}
+    else renderCloudLogin();
+  }
 }
 async function logEvent(type,text,taskId=null){
   if(state.mode==='demo'){ state.db.events.unshift({id:uid(),type,text,userId:currentUser()?.id||null,taskId,createdAt:nowISO()}); saveDemoDB(); return; }
@@ -423,23 +432,14 @@ function renderSetup(){
   app.innerHTML=`<div class="login"><div class="login-card"><div class="login-sigil">I</div><h1>IMPERIUM</h1><div class="motto"><span>Ad gloriam Imperatoris Nikitae</span><small>Na chwałę Imperatora Nikity</small></div>
   <p style="color:#9b8f7c;font-size:13px;line-height:1.55">Połącz aplikację z jednym wspólnym serwerem, aby zadania, raporty i pliki były widoczne na wszystkich telefonach.</p>
   <div class="setup-grid"><div class="setup-card"><h3>☁ Wspólna baza</h3><p>Supabase: konta pracowników, wspólne zadania, zdjęcia, wideo i dokumenty.</p><button class="goldbtn" id="open-cloud-setup">Połącz z chmurą</button></div>
-  ${BASE_CFG.ALLOW_DEMO!==false?'<div class="setup-card"><h3>⚙ Demo lokalne</h3><p>Działa od razu, ale dane zostają tylko na tym urządzeniu.</p><button class="ghost" id="start-demo">Uruchom demo</button></div>':''}</div>
+  ${!OWNER_ONLY_ACCESS&&BASE_CFG.ALLOW_DEMO!==false?'<div class="setup-card"><h3>⚙ Demo lokalne</h3><p>Działa od razu, ale dane zostają tylko na tym urządzeniu.</p><button class="ghost" id="start-demo">Uruchom demo</button></div>':''}</div>
   </div></div>`;
   document.getElementById('open-cloud-setup')?.addEventListener('click',()=>{state.modal='cloudSetup';render();});
   document.getElementById('start-demo')?.addEventListener('click',()=>{state.mode='demo';localStorage.setItem(MODE_KEY,'demo');state.db=loadDemoDB();try{state.demoSession=JSON.parse(localStorage.getItem(DEMO_SESSION_KEY));}catch(e){}render();});
 }
 function renderCloudLogin(){
-  app.innerHTML=`<div class="login"><div class="login-card"><div class="login-sigil">I</div><h1>IMPERIUM</h1><div class="motto"><span>Ad gloriam Imperatoris Nikitae</span><small>Na chwałę Imperatora Nikity</small></div>
-  <div class="cloud-state">● WSPÓLNA BAZA</div>${state.cloudError?`<div class="status-note danger-text">${esc(state.cloudError)}</div>`:''}
-  <div class="field" style="text-align:left"><label>E-mail</label><input id="login-email" type="email" autocomplete="username" placeholder="pracownik@firma.pl"></div>
-  <div class="field" style="text-align:left"><label>Hasło</label><input id="login-pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
-  <button class="goldbtn" id="cloud-login">Zaloguj się</button>
-  <details class="register-box"><summary>Utwórz konto pracownika</summary><div class="field"><label>Imię i nazwisko</label><input id="reg-name" placeholder="Imię i nazwisko"></div><div class="field"><label>E-mail</label><input id="reg-email" type="email" placeholder="pracownik@firma.pl"></div><div class="field"><label>Hasło (min. 6 znaków)</label><input id="reg-pass" type="password" placeholder="Hasło"></div><button class="ghost" id="cloud-register" style="width:100%">Zarejestruj konto</button></details>
-  <button class="ghost muted-btn" id="change-server" style="width:100%;margin-top:12px">Konfiguracja serwera</button>
-  </div></div>`;
-  document.getElementById('cloud-login').onclick=async()=>{const e=document.getElementById('login-email').value.trim(),p=document.getElementById('login-pass').value;if(!e||!p)return toast('Wpisz e-mail i hasło.');setLoading(true,'Logowanie…');try{await signInCloud(e,p);}catch(err){state.loading=false;state.cloudError=err.message;render();}};
-  document.getElementById('cloud-register').onclick=async()=>{const n=document.getElementById('reg-name').value.trim(),e=document.getElementById('reg-email').value.trim(),p=document.getElementById('reg-pass').value;if(!n||!e||p.length<6)return toast('Uzupełnij dane i ustaw hasło min. 6 znaków.');setLoading(true,'Tworzenie konta…');try{await signUpCloud(n,e,p);if(!state.auth){state.loading=false;render();}}catch(err){state.loading=false;state.cloudError=err.message;render();}};
-  document.getElementById('change-server').onclick=()=>{state.modal='cloudSetup';render();};
+ app.innerHTML=`<main class="login bio-login"><section class="login-card"><div class="bio-wordmark">${umbrellaMark()}<span>UMBRELLA<small>BIOTECHNOLOGY DIVISION</small></span></div><div class="login-classification">IMPERIUM / PRIVATE ACCESS</div><h1>Autoryzacja dostępu</h1><p class="login-description">Twoje centrum zarządzania.<br>Dostęp wyłącznie dla właściciela.</p>${state.cloudError?`<div class="status-note danger-text" role="alert">${esc(state.cloudError)}</div>`:''}<form id="owner-login-form"><div class="field"><label for="login-email">E-mail</label><input id="login-email" type="email" autocomplete="username" required placeholder="Twój adres e-mail"></div><div class="field"><label for="login-pass">Hasło</label><input id="login-pass" type="password" autocomplete="current-password" required placeholder="Wprowadź hasło"></div><button class="goldbtn" id="cloud-login" type="submit">Zaloguj się <span aria-hidden="true">→</span></button></form><div class="login-footer"><span class="bio-status-dot"></span> Rejestracja jest zamknięta</div></section><div class="login-bottom">IMPERIUM <span>BIOTECH CORPORATION</span></div></main>`;
+ document.getElementById('owner-login-form').onsubmit=async e=>{e.preventDefault();const email=document.getElementById('login-email').value.trim(),password=document.getElementById('login-pass').value;if(!email||!password)return;setLoading(true,'Weryfikacja dostępu…');try{await signInCloud(email,password);}catch(err){state.loading=false;state.cloudError=err.message;renderCloudLogin();}};
 }
 function renderDemoLogin(){
   const workers=state.db.users.filter(u=>u.role==='worker'&&u.active);
@@ -465,6 +465,8 @@ function imperialIcon(id){
     invoices:'<svg viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2V3zM8 8h8M8 12h8M8 16h5"/></svg>',
     important:'<svg viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3zM12 9v5M12 17v1"/></svg>',
     activity:'<svg viewBox="0 0 24 24"><path d="M4 13h4l2-6 4 11 2-5h4"/></svg>',
+    modules:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    lock:'<svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>',
     attendance:'<svg viewBox="0 0 24 24"><path d="M7 4h10v16H7zM10 8h4M10 12h4M10 16h2"/></svg>',
     chat:'<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM8 9h8M8 12h6"/></svg>',
     team:'<svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2"/><path d="M3 20c0-4 2.5-6 6-6s6 2 6 6M15 15c3 0 5 1.5 5 5"/></svg>',
@@ -478,13 +480,14 @@ function render(){
   const previousNav=app.querySelector('.bottomnav-inner');
   if(previousNav)bottomNavScrollLeft=previousNav.scrollLeft;
   const c=cloudConfig();
-  if(!state.mode){ const saved=localStorage.getItem(MODE_KEY); if(saved==='cloud'&&c)state.mode='cloud'; else if(saved==='demo')state.mode='demo'; }
+  if(!state.mode){ const saved=localStorage.getItem(MODE_KEY); if(saved==='cloud'&&c)state.mode='cloud'; else if(saved==='demo'&&!OWNER_ONLY_ACCESS)state.mode='demo'; }
   if(state.mode==='cloud'){
     if(!c){state.mode=null;localStorage.removeItem(MODE_KEY);return renderSetup();}
     if(!state.auth){try{state.auth=JSON.parse(localStorage.getItem(AUTH_KEY));}catch(e){} }
     if(!state.auth?.access_token) return state.modal==='cloudSetup'?renderOverlayOn(renderCloudLogin,renderCloudSetupModal):renderCloudLogin();
     if(!state.db){loadCloudDB();return;}
   }
+  if(state.mode==='demo'&&OWNER_ONLY_ACCESS){state.mode='cloud';state.demoSession=null;localStorage.removeItem(DEMO_SESSION_KEY);localStorage.setItem(MODE_KEY,'cloud');return renderCloudLogin();}
   if(state.mode==='demo'){
     if(!state.db)state.db=loadDemoDB();
     if(!state.demoSession){try{state.demoSession=JSON.parse(localStorage.getItem(DEMO_SESSION_KEY));}catch(e){} }
@@ -499,35 +502,33 @@ function render(){
   if(!isAdmin()&&state.tab==='invoices')state.tab='tasks';
   if(!canViewImportant()&&state.tab==='important')state.tab='tasks';
   const open=state.db.tasks.filter(t=>t.status==='open').length, prog=state.db.tasks.filter(t=>t.status==='in_progress').length, rev=state.db.tasks.filter(t=>t.status==='review').length, urg=state.db.tasks.filter(t=>t.priority==='urgent'&&t.status!=='done').length;
-  app.innerHTML=`<div class="app aureus-shell light-shell">
+  app.innerHTML=`<div class="app aureus-shell bio-shell">
   <header class="topbar"><div class="topbar-inner">
-    <div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>Zadania i zarządzanie</small></div></div>
-    <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">${u.role==='admin'?'Administrator':'Pracownik'}</span><span class="coin-badge">${coinBalance(u.id)} <small>NK</small></span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
+    <div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · BIOTECH DIVISION</small></div></div>
+    <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">Dostęp właściciela</span>${canCreateTasks()?'<button class="command-add" id="new-task" aria-label="Nowe zadanie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
   </div></header>
-  <main class="content">${(reduction.owner||reduction.recipient)&&state.tab==='tasks'?reductionNotice():''}${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}${state.tab==='game'?'<div id="imperium-quest"></div>':''}</main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('game','Gra')}${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${canManageRentals()?nav('rentals','Najem'):''}${isAdmin()?nav('invoices','Faktury'):''}${canViewImportant()?nav('important',`Ważne${pendingImportantCount()?' ('+pendingImportantCount()+')':''}`,`${importantIndicatorClass()} ${hasSoonMission()?'important-soon':''}`):''}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','Ustawienia')}</div></nav>
+  <main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1]||'Centrum operacyjne')}<small>PRIVATE TERMINAL</small></div>${state.tab==='tasks'?renderTasksPage(open,prog,rev,urg,u):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}${state.tab==='game'?'<div id="imperium-quest"></div>':''}</main>
+  ${renderModuleNavigation()}
   ${renderModal()}</div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');
   if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
   bind();
+  document.getElementById('module-menu')?.addEventListener('click',()=>{state.moduleMenu=true;render();document.getElementById('close-modules')?.focus();});
+  document.getElementById('close-modules')?.addEventListener('click',()=>{state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();});
+  const drawer=app.querySelector('.module-drawer');
+  drawer?.addEventListener('keydown',e=>{if(e.key==='Escape'){state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();}if(e.key==='Tab'){const buttons=[...drawer.querySelectorAll('button')];const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
   if(state.tab==='game')window.ImperiumQuest?.mount(document.getElementById('imperium-quest'),state.mode+':'+u.id);
 }
-// All authenticated roles see the same notice and the same restricted navigation.
-// Authentication and app updates remain available during the technical pause.
+// Non-owner sessions keep only sign-out and retry; operational data is discarded.
 function renderRestrictedApp(u){
-  state.tab='notice';
-  state.modal=null;
-  if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}
-  state.invoicePdfBlob=null;selectedFiles=[];fileInput.value='';
-  stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);
-  if(profileMessageTimer){clearInterval(profileMessageTimer);profileMessageTimer=null;}
-  app.innerHTML=`<div class="app aureus-shell light-shell work-locked">
-  <header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil"><b>I</b></div><div class="brand-copy"><h1>IMPERIUM</h1><small>Przerwa techniczna</small></div></div><div class="top-actions"><span class="command-role">${esc(u.name)}</span><button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div></div></header>
-  <main class="content"><section class="panel maintenance-notice" role="status" style="padding:28px;margin-bottom:24px;border:2px solid #4472c4"><h2>Przerwa techniczna w działaniu aplikacji</h2><p>Prace w aplikacji zostały tymczasowo wstrzymane.</p><p>Wszystkie pozostałe funkcje i zakładki, w tym gra, są zablokowane dla wszystkich kont do odwołania.</p></section></main>
-  <nav class="bottomnav"><div class="bottomnav-inner">${nav('notice','Komunikat')}${nav('game','Gra')}${nav('tasks','Zadania')}${nav('locations','Obiekty')}${nav('inspections','Przeglądy')}${nav('rentals','Najem')}${nav('invoices','Faktury')}${nav('important','Ważne')}${nav('activity','Aktywność')}${nav('attendance','Meldunek')}${nav('chat','Czat')}${nav('team','Zespół')}${nav('profile','Profil')}${nav('salary','Moja pensja')}${nav('settings','Ustawienia')}</div></nav></div>`;
-  const bottomNav=app.querySelector('.bottomnav-inner');if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
-  app.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(b.disabled||b.dataset.tab!=='notice')return;state.tab='notice';render();});
-  document.getElementById('logout').onclick=()=>state.mode==='cloud'?signOutCloud():demoLogout();
+ state.tab='notice';state.modal=null;state.moduleMenu=false;
+ if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}
+ state.invoicePdfBlob=null;selectedFiles=[];fileInput.value='';
+ stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);
+ if(profileMessageTimer){clearInterval(profileMessageTimer);profileMessageTimer=null;}
+ app.innerHTML=`<main class="login bio-login"><section class="login-card access-denied"><div class="bio-wordmark">${umbrellaMark()}<span>UMBRELLA<small>BIOTECHNOLOGY DIVISION</small></span></div><div class="login-classification">IMPERIUM / DOSTĘP OGRANICZONY</div><div class="access-symbol">${imperialIcon('lock')}</div><h1>Strefa zamknięta</h1><p>Aplikacja jest obecnie dostępna wyłącznie dla właściciela.</p><p class="subtle">Pozostałe konta są tymczasowo zablokowane.</p><div class="denied-account">${esc(u.name)}</div><button class="goldbtn" id="retry-access">Sprawdź dostęp ponownie</button><button class="ghost" id="logout">Wyloguj się</button></section></main>`;
+ document.getElementById('retry-access').onclick=()=>loadCloudDB();
+ document.getElementById('logout').onclick=()=>signOutCloud();
 }
 async function loadSalaryMonth({refresh=false}={}){
   if(state.mode!=='cloud'||!currentUser())return;
@@ -720,7 +721,7 @@ async function saveExtraMission(){if(extraMissionSaving)return;const title=docum
   if(state.filter!=='all')tasks=tasks.filter(t=>state.filter==='mine'?t.claimedBy===u.id&&t.status!=='done':t.status===state.filter);
   tasks.sort((a,b)=>({urgent:0,high:1,normal:2}[a.priority]-{urgent:0,high:1,normal:2}[b.priority])||(new Date(b.createdAt)-new Date(a.createdAt)));
   const noLoc=u.role!=='admin'&&u.locationIds.length===0?'<div class="status-note">Twoje konto jest aktywne, ale administrator nie przypisał jeszcze żadnego obiektu. Po przypisaniu zadania pojawią się tutaj automatycznie.</div>':'';
-  return `${noLoc}<section class="hero command-hero"><div class="hero-card"><div class="hero-code">AUREUS / 01</div><div class="eyebrow">Twój dzień</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'Zarządzaj zadaniami, zespołem i obiektami':'Twoje zadania, raporty i czas pracy'}</p><div class="hero-scan"></div></div><div class="stats"><div class="stat"><b>${open}</b><span>NOWE</span></div><div class="stat"><b>${prog}</b><span>W TOKU</span></div><div class="stat"><b>${rev}</b><span>AKCEPTACJA</span></div><div class="stat ${urg?'alert':''}"><b>${urg}</b><span>PILNE</span></div></div></section>
+  return `${noLoc}<section class="bio-hero"><div class="bio-hero-copy"><div class="eyebrow"><span class="bio-status-dot"></span> CENTRUM OPERACYJNE</div><h2>Kontrola.<br>Bez kompromisów.</h2><p>Witaj, ${esc(u.name)}.<br>Twoje zadania, obiekty i zespół w jednym miejscu.</p><button class="goldbtn" data-bio-new-task>Nowe zadanie <span aria-hidden="true">↗</span></button></div><div class="bio-hero-visual" aria-hidden="true"><div class="bio-orbit orbit-one"></div><div class="bio-orbit orbit-two"></div>${umbrellaMark()}<span class="bio-visual-caption">UMBRELLA<br>BIOTECHNOLOGY</span></div><div class="bio-hero-footer"><span>IMPERIUM / OPERATIONS</span><span>DOSTĘP WŁAŚCICIELA</span></div></section><section class="bio-stats" aria-label="Podsumowanie zadań">${[[open,'Nowe zadania','01'],[prog,'W toku','02'],[rev,'Do akceptacji','03'],[urg,'Pilne','04']].map(([n,label,num])=>`<div class="bio-stat ${label==='Pilne'&&n?'alert':''}"><span class="stat-index">${num}</span><b>${n}</b><span>${label}</span></div>`).join('')}</section>
   ${renderExtraMissionsSection()}
   <div class="toolbar"><div><div class="eyebrow">Operacje</div><h2 class="section-title">Zadania</h2></div><div class="filters">${chip('all','Wszystkie')}${chip('open','Nowe')}${chip('in_progress','W toku')}${chip('review','Akceptacja')}${chip('mine','Moje')}${chip('done','Zakończone')}</div></div><div class="grid">${tasks.length?tasks.map(t=>taskCard(t,u)).join(''):'<div class="empty">Brak zadań w tym widoku.</div>'}</div>`;
 }
@@ -928,7 +929,7 @@ async function adminStopAttendance(userId){
 }
 function renderActivityPage(){return `<div class="toolbar"><div><div class="eyebrow">Dziennik</div><h2 class="section-title">Aktywność</h2></div></div><div class="settings-card">${state.db.events.slice(0,100).map(e=>`<div class="activity"><p>${esc(e.text)}</p><small>${fmtDate(e.createdAt)}</small></div>`).join('')||'<div class="empty">Brak zdarzeń.</div>'}</div>`;}
 function renderTeamPage(){
-  return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()?`<div class="voucher-exchange"><div class="eyebrow">KONTROLA VOUCHERÓW</div><h3>Aktywne i do wypłaty</h3><div class="voucher-list">${voucherRows().filter(v=>voucherState(v)==='Aktywny'||voucherState(v)==='Do wypłaty').map(v=>voucherCard(v,true)).join('')||'<div class="empty compact">Brak aktywnych voucherów i premii do wypłaty.</div>'}</div></div>`:''}${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Nowy pracownik instaluje ten sam APK i wybiera „Utwórz konto pracownika”. Potem tutaj przypisujesz mu obiekty i możesz otworzyć jego kartę pracy.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>${u.role==='admin'?'Administrator':'Pracownik'} • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions"><button class="smallbtn" data-public-profile="${u.id}">Profil / wiadomość</button>${isAdmin()||u.id===currentUser().id||canViewTeamHours()&&u.locationIds.some(id=>currentUser().locationIds.includes(id))?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
+  return `<div class="toolbar"><div><div class="eyebrow">Ludzie</div><h2 class="section-title">Zespół</h2></div>${isAdmin()&&state.mode==='demo'?'<button class="goldbtn" id="add-user">+ Pracownik</button>':''}</div>${isAdmin()?`<div class="voucher-exchange"><div class="eyebrow">KONTROLA VOUCHERÓW</div><h3>Aktywne i do wypłaty</h3><div class="voucher-list">${voucherRows().filter(v=>voucherState(v)==='Aktywny'||voucherState(v)==='Do wypłaty').map(v=>voucherCard(v,true)).join('')||'<div class="empty compact">Brak aktywnych voucherów i premii do wypłaty.</div>'}</div></div>`:''}${isAdmin()&&state.mode==='cloud'?'<div class="status-note">Nowy pracownik instaluje ten sam APK i wybiera „Utwórz konto pracownika”. Potem tutaj przypisujesz mu obiekty i możesz otworzyć jego kartę pracy.</div>':''}<div class="list">${state.db.users.map(u=>{const st=workerStats(u.id,'all');return `<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)} ${u.active?'':'(nieaktywny)'}</b><small>Dostęp właściciela • ${u.locationIds.map(id=>getLoc(id)?.name).filter(Boolean).join(', ')||'bez obiektów'}</small><div class="mini-metrics">${isAdmin()||u.id===currentUser().id?`<span class="coin-mini">🪙 ${coinBalance(u.id)} NK</span>`:''}<span>✓ ${st.done}</span><span class="${st.late?'metric-bad':''}">⏱ ${st.late} po terminie</span><span class="${st.warnings+st.reprimands?'metric-bad':''}">⚠ ${st.records.length} wpisów</span></div></div></div><div class="row-actions"><button class="smallbtn" data-public-profile="${u.id}">Profil / wiadomość</button>${isAdmin()||u.id===currentUser().id||canViewTeamHours()&&u.locationIds.some(id=>currentUser().locationIds.includes(id))?`<button class="smallbtn gold" data-worker-card="${u.id}">Karta</button>`:''}${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`}).join('')}</div>`;
 }
 function taskProgressStats(userId){
   const all=state.db.tasks||[], mine=all.filter(t=>t.claimedBy===userId||t.assignedTo===userId);
@@ -943,7 +944,7 @@ function profileMessengerButton(){return `<button id="profile-messenger" class="
 function profileMessageNavigation(){return `<div class="profile-tabs"><button class="smallbtn" data-profile-home>Mój profil</button><button class="smallbtn" data-profile-inbox>Moje wiadomości${profileUnread?' ('+profileUnread+')':''}</button><button class="smallbtn" data-profile-members>Uczestnicy</button></div>`;}
 function openPublicProfile(id){const u=getUser(id);if(!u)return;state.modal=null;state.tab='profile';publicProfileId=id===currentUser().id?null:id;state.profileView=publicProfileId?'visitor':'mine';profileMessages=[];render();}
 function openProfileInbox(){state.modal=null;state.tab='profile';state.profileView='messages';publicProfileId=null;profileMessages=[];render();}
-function renderPublicProfile(){const u=getUser(publicProfileId);if(!u){publicProfileId=null;return renderProfilePage();}return `<section class="profile-page">${profileMessageNavigation()}<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PROFIL UCZESTNIKA</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'Administrator':'Pracownik'}${u.active?'':' · nieaktywny'}</p></div></div></div>${renderProfileMessages(u)}</section>`;}
+function renderPublicProfile(){const u=getUser(publicProfileId);if(!u){publicProfileId=null;return renderProfilePage();}return `<section class="profile-page">${profileMessageNavigation()}<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PROFIL UCZESTNIKA</div><h2>${esc(u.name)}</h2><p>Dostęp właściciela${u.active?'':' · nieaktywny'}</p></div></div></div>${renderProfileMessages(u)}</section>`;}
 function renderProfileMessages(u=currentUser()){const own=u.id===currentUser().id;return `<section class="profile-messages panel" data-profile-target="${esc(u.id)}"><h3>${own?'Moje wiadomości':'Wiadomości do: '+esc(u.name)}</h3><p class="subtle">${own?'Odebrane i wysłane wiadomości. Wybierz nadawcę, aby odpowiedzieć.':'Korespondencję widzisz tylko Ty i '+esc(u.name)+'.'}</p><div id="profile-message-list" class="profile-message-list"><div class="empty compact">Ładowanie wiadomości…</div></div>${own?'':u.active?`<div class="profile-message-compose"><textarea id="profile-message-input" rows="3" maxlength="2000" placeholder="Napisz wiadomość…" aria-label="Wiadomość do uczestnika"></textarea><button id="profile-message-send" class="goldbtn">Wyślij wiadomość</button></div>`:'<p class="subtle">Konto nieaktywne — wysyłanie wyłączone.</p>'}<div id="profile-message-error" class="danger-text" role="status"></div></section>`;}
 function profileVisibleMessages(target){const me=currentUser().id;return profileMessages.filter(m=>target===me?(m.receiver_id===me||m.sender_id===me):(m.receiver_id===target&&m.sender_id===me||m.sender_id===target&&m.receiver_id===me));}
 function updateProfileMessenger(){const old=document.getElementById('profile-messenger');if(old){old.outerHTML=profileMessengerButton();document.getElementById('profile-messenger').onclick=openProfileInbox;}}
@@ -1130,12 +1131,8 @@ async function completeImportantAlert(id){
 }
 
 function renderSettingsPage(){
-  const u=currentUser(),code=state.mode==='cloud'?configCode():'';
-  return `<div class="toolbar"><div><div class="eyebrow">System</div><h2 class="section-title">Ustawienia</h2></div></div>
-  <div class="settings-card"><h3>Tryb danych</h3><p>${state.mode==='cloud'?'☁ Wspólna baza Supabase — dane i pliki są synchronizowane między telefonami.':'⚙ Demo lokalne — dane są tylko na tym urządzeniu.'}</p>${state.cloudError?`<div class="status-note danger-text">${esc(state.cloudError)}</div>`:''}</div>
-  ${state.mode==='cloud'?`<div class="settings-card"><h3>Kod konfiguracji dla zespołu</h3><p>Jeśli APK nie ma jeszcze wbudowanego adresu bazy, wyślij pracownikowi ten kod razem z APK. Po wbudowaniu konfiguracji ten krok nie będzie potrzebny.</p><div class="codebox" id="cfg-code">${esc(code)}</div><div style="margin-top:10px"><button class="smallbtn gold" id="copy-code">Kopiuj kod</button> ${!(BASE_CFG.DEFAULT_SUPABASE_URL&&BASE_CFG.DEFAULT_SUPABASE_ANON_KEY)?'<button class="smallbtn" id="server-settings">Serwer</button>':''}</div></div>`:''}
-  <div class="settings-card"><h3>Powiadomienia</h3><p>Dźwięk odtwarza się, gdy IMPERIUM jest otwarte. Powiadomienia po zamknięciu aplikacji wymagają osobnej usługi działającej w tle.</p><div style="margin-top:12px"><button class="smallbtn gold" id="enable-notifications">Włącz powiadomienia</button> <button class="smallbtn" id="notification-sound-test">🔊 Sprawdź dźwięk</button></div></div>
-  <div class="settings-card"><h3>Konto</h3><p>${esc(u.name)} • ${u.role==='admin'?'administrator':'pracownik'}</p><div style="margin-top:12px">${state.mode==='demo'?'<button class="dangerbtn" id="reset-demo">Przywróć dane demo</button>':'<button class="dangerbtn" id="cloud-logout">Wyloguj</button>'}</div></div>`;
+  const u=currentUser();
+  return `<div class="toolbar"><div><div class="eyebrow">System</div><h2 class="section-title">Ustawienia</h2></div></div><div class="settings-card"><h3>Dostęp prywatny</h3><p>Aplikacja jest otwarta wyłącznie dla właściciela. Pozostałe konta pozostają tymczasowo zablokowane.</p>${state.cloudError?`<div class="status-note danger-text">${esc(state.cloudError)}</div>`:''}</div><div class="settings-card"><h3>IMPERIUM / Biotech</h3><p>Nowy interfejs korporacyjny. Ekran startowy Umbrella wyświetla się przez 10 sekund przy pierwszym uruchomieniu tej wersji na urządzeniu.</p></div><div class="settings-card"><h3>Powiadomienia</h3><p>Ustaw powiadomienia o zadaniach i wiadomościach.</p><div class="task-actions"><button class="smallbtn gold" id="enable-notifications">Włącz powiadomienia</button><button class="smallbtn" id="notification-sound-test">Sprawdź dźwięk</button></div></div><div class="settings-card"><h3>Konto właściciela</h3><p>${esc(u.name)}</p><button class="dangerbtn" id="cloud-logout">Wyloguj się</button></div>`;
 }
 
 function renderWorkerCard(){
@@ -1149,7 +1146,7 @@ function renderWorkerCard(){
   const taskRows=tasks.map(t=>`<button class="history-row" data-history-task="${t.id}"><span><b>${esc(t.title)}</b><small>${esc(getLoc(t.locationId)?.name||'')} • ${fmtDate(t.claimedAt||t.createdAt)}</small></span><span class="history-right"><em class="${taskLate(t)?'late-text':''}">${taskLate(t)?'PO TERMINIE':taskStatusLabel(t.status)}</em>${t.rewardCoins?`<small class="coin-text">+${t.rewardCoins} NK</small>`:''}${t.reworkCount?`<small>${t.reworkCount}× poprawka</small>`:''}</span></button>`).join('')||'<div class="empty compact">Brak zadań w wybranym okresie.</div>';
   const recRows=records.map(r=>{const t=state.db.tasks.find(x=>x.id===r.taskId);return `<div class="discipline-entry ${r.type}"><div><b>${esc(disciplineLabel(r.type))}</b><small>${fmtDate(r.createdAt)}${t?` • ${esc(t.title)}`:''}</small></div><p>${esc(r.description)}</p>${isAdmin()?`<button class="smallbtn" data-delete-discipline="${r.id}">Usuń wpis</button>`:''}</div>`}).join('')||'<div class="empty compact">Brak uwag i sankcji w wybranym okresie.</div>';
   const coinRows=coins.map(c=>{const t=state.db.tasks.find(x=>x.id===c.taskId);return `<div class="coin-entry ${c.amount<0?'negative':'positive'}"><div><b>${fmtCoins(c.amount)}</b><span>${esc(coinKindLabel(c.kind))}</span></div><p>${esc(c.description||'Bez opisu')}</p><small>${fmtDate(c.createdAt)}${t?` • ${esc(t.title)}`:''}</small></div>`}).join('')||'<div class="empty compact">Brak operacji Nikitocoinów w wybranym okresie.</div>';
-  return `<div class="modal-bg"><div class="modal worker-card-modal"><div class="worker-card-head"><div class="avatar big">${initials(u.name)}</div><div><h2>${esc(u.name)}</h2><div class="modal-sub">${u.role==='admin'?'Administrator':'Pracownik'} • ${u.active?'aktywny':'nieaktywny'}</div></div><div class="coin-wallet"><small>IMPERATORSKIE NIKITOCOINY</small><b>🪙 ${balance} NK</b></div></div><div class="period-tabs"><button class="chip ${period==='30'?'active':''}" data-worker-period="30">30 dni</button><button class="chip ${period==='90'?'active':''}" data-worker-period="90">90 dni</button><button class="chip ${period==='365'?'active':''}" data-worker-period="365">Rok</button><button class="chip ${period==='all'?'active':''}" data-worker-period="all">Wszystko</button></div><div class="worker-stats"><div><b>${st.done}</b><span>Wykonane</span></div><div><b>${st.active}</b><span>Aktywne</span></div><div class="${st.late?'bad-stat':''}"><b>${st.late}</b><span>Po terminie</span></div><div><b>${st.reworks}</b><span>Do poprawy</span></div><div><b>${st.notes}</b><span>Uwagi</span></div><div class="${st.warnings+st.reprimands?'bad-stat':''}"><b>${st.warnings+st.reprimands}</b><span>Ostrz./upomn.</span></div></div><div class="performance-line"><span>Realizacja zakończonych</span><b>${completion}%</b></div>${renderWorkerPlans(u)}<div class="section-split"><div><div class="subheading">Historia zadań</div>${taskRows}</div><div><div class="subheading">Uwagi i sankcje</div>${recRows}</div></div><div class="subheading" style="margin-top:16px">Vouchery</div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v,isAdmin())).join('')||'<div class="empty compact">Brak voucherów.</div>'}</div><div class="subheading" style="margin-top:16px">Portfel Nikitocoinów</div><div class="coin-ledger">${coinRows}</div><div class="status-note">Nikitocoiny są wewnętrznymi punktami IMPERIUM i nie stanowią automatycznego potrącenia ani składnika wynagrodzenia.</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button>${isAdmin()?'<button class="ghost" id="adjust-coins">± Nikitocoiny</button><button class="goldbtn" id="add-discipline">+ Dodaj uwagę / sankcję</button>':''}</div></div></div>`;
+  return `<div class="modal-bg"><div class="modal worker-card-modal"><div class="worker-card-head"><div class="avatar big">${initials(u.name)}</div><div><h2>${esc(u.name)}</h2><div class="modal-sub">Dostęp właściciela • ${u.active?'aktywny':'nieaktywny'}</div></div><div class="coin-wallet"><small>IMPERATORSKIE NIKITOCOINY</small><b>🪙 ${balance} NK</b></div></div><div class="period-tabs"><button class="chip ${period==='30'?'active':''}" data-worker-period="30">30 dni</button><button class="chip ${period==='90'?'active':''}" data-worker-period="90">90 dni</button><button class="chip ${period==='365'?'active':''}" data-worker-period="365">Rok</button><button class="chip ${period==='all'?'active':''}" data-worker-period="all">Wszystko</button></div><div class="worker-stats"><div><b>${st.done}</b><span>Wykonane</span></div><div><b>${st.active}</b><span>Aktywne</span></div><div class="${st.late?'bad-stat':''}"><b>${st.late}</b><span>Po terminie</span></div><div><b>${st.reworks}</b><span>Do poprawy</span></div><div><b>${st.notes}</b><span>Uwagi</span></div><div class="${st.warnings+st.reprimands?'bad-stat':''}"><b>${st.warnings+st.reprimands}</b><span>Ostrz./upomn.</span></div></div><div class="performance-line"><span>Realizacja zakończonych</span><b>${completion}%</b></div>${renderWorkerPlans(u)}<div class="section-split"><div><div class="subheading">Historia zadań</div>${taskRows}</div><div><div class="subheading">Uwagi i sankcje</div>${recRows}</div></div><div class="subheading" style="margin-top:16px">Vouchery</div><div class="voucher-list">${voucherRows(u.id).map(v=>voucherCard(v,isAdmin())).join('')||'<div class="empty compact">Brak voucherów.</div>'}</div><div class="subheading" style="margin-top:16px">Portfel Nikitocoinów</div><div class="coin-ledger">${coinRows}</div><div class="status-note">Nikitocoiny są wewnętrznymi punktami IMPERIUM i nie stanowią automatycznego potrącenia ani składnika wynagrodzenia.</div><div class="modal-actions"><button class="ghost" data-close>Zamknij</button>${isAdmin()?'<button class="ghost" id="adjust-coins">± Nikitocoiny</button><button class="goldbtn" id="add-discipline">+ Dodaj uwagę / sankcję</button>':''}</div></div></div>`;
 }
 function renderDisciplineModal(){
   const u=state.db.users.find(x=>x.id===state.userId); if(!u)return '';
@@ -1319,7 +1316,7 @@ function bindCloudSetup(){
   document.getElementById('import-cloud-code')?.addEventListener('click',()=>{try{const c=parseConfigCode(document.getElementById('cloud-code').value);document.getElementById('cloud-url').value=c.url;document.getElementById('cloud-key').value=c.key;toast('Kod wczytany.');}catch(e){toast(e.message);}});
   document.getElementById('save-cloud')?.addEventListener('click',async()=>{try{saveCloudConfig(document.getElementById('cloud-url').value,document.getElementById('cloud-key').value);state.mode='cloud';state.modal=null;state.db=null;state.auth=null;localStorage.removeItem(AUTH_KEY);render();}catch(e){toast(e.message);}});
 }
-function bind(){bindExtraMissions();bindProfileMessaging();if(state.tab!=='chat'){stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);}if(state.tab==='chat'){
+function bind(){document.querySelector('[data-bio-new-task]')?.addEventListener('click',()=>{taskCopyDraft=null;selectedFiles=[];state.modal='newTask';render();});bindExtraMissions();bindProfileMessaging();if(state.tab!=='chat'){stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);}if(state.tab==='chat'){
   bindChatMedia();
   setTimeout(()=>loadChatMessages(),0);
   if(window.imperiumChatTimer){
@@ -1347,7 +1344,7 @@ setTimeout(()=>{
   });
 }
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;if(state.tab==='profile'){publicProfileId=null;state.profileView='mine';}if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else if(state.tab==='salary'){render();loadSalaryMonth();}else render();});
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.moduleMenu=false;state.tab=b.dataset.tab;if(state.tab==='profile'){publicProfileId=null;state.profileView='mine';}if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else if(state.tab==='salary'){render();loadSalaryMonth();}else render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}state.invoicePdfBlob=null;state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;state.roomId=null;selectedFiles=[];fileInput.value='';render();});
   bindSalary();
@@ -1933,7 +1930,7 @@ setInterval(updateTimers,1000);
 
 async function init(){
   const saved=localStorage.getItem(MODE_KEY),c=cloudConfig();
-  if(saved==='cloud'&&c)state.mode='cloud';else if(saved==='demo')state.mode='demo';else if(c)state.mode='cloud';
+  if(saved==='cloud'&&c)state.mode='cloud';else if(saved==='demo'&&!OWNER_ONLY_ACCESS)state.mode='demo';else if(c)state.mode='cloud';
   if(state.mode==='cloud'){try{state.auth=JSON.parse(localStorage.getItem(AUTH_KEY));}catch(e){}if(state.auth?.access_token){await loadCloudDB();startPolling();return;}}
   if(state.mode==='demo'){state.db=loadDemoDB();try{state.demoSession=JSON.parse(localStorage.getItem(DEMO_SESSION_KEY));}catch(e){}}
   render();
@@ -1961,6 +1958,6 @@ function initSeason(){
   document.body.appendChild(box);
 }
 
-// Calm light interface: no decorative animation.
+// The versioned first-run introduction lives outside the app render tree.
   init();
 })();
