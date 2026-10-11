@@ -1,21 +1,19 @@
-# Navigation 6.1
+# Free navigation (web update 51, Android 6.1 compatible)
 
-Navigation is available to active IMPERIUM participants. It supports car and truck profiles, route comparison, toll estimates in PLN/EUR, distance/time, fuel and per-kilometre budgets, saved destinations and foreground GPS guidance.
+Navigation uses **openrouteservice / HeiGIT Standard**, with no HERE requests or paid fallback. The owner creates a free key at https://account.heigit.org/ and enters it in **Nawigacja → Połącz bezpłatną nawigację**. Existing HERE keys are not reused. Until the free key is configured, calculations remain disabled rather than fabricated.
 
-## Connect HERE
+Car/truck routing, distance/time, foreground GPS and voice guidance, favorites, toll-road/highway/ferry avoidance and fuel/per-kilometre budgets are available. The free provider does not return toll prices. Each route has an optional manual toll-budget amount, clearly distinguished from provider pricing; totals exclude tolls until an amount is entered. OSM toll annotations can be incomplete: absence of marked tollways is not a guarantee of zero charges. Strict avoidance requires complete toll annotations without paid spans. Access/restriction warnings block guidance. Unsupported tunnel/unpaved-road switches and tariff-only truck options are removed from the free UI.
 
-The owner supplies their own HERE API key in **Nawigacja → Połącz HERE**. The account must have access to Routing API v8, Toll Costs and Geocoding & Search. Until configured, route calculation and address search are unavailable; no simulated routes or prices are substituted. HERE usage and toll calculation may incur provider charges.
+Truck routing sends height, width and length in metres, actual weight and maximum axle load in tonnes, and vehicle_type=hgv. Drivers must confirm the profile and observe road signs. DMC is retained to validate actual weight; Euro/CO2/axle counts are not used to invent tariff estimates. Guidance pauses when IMPERIUM is hidden; no offline/background navigation is provided.
 
-Deploy `backend/navigation.sql` after the existing communications/social migrations. The production migration installs the Supabase `http` extension. The key is stored in `imperium_private.navigation_config`; authenticated clients cannot read it. Only the owner can replace it. Public RPCs expose configuration status, address search and validated route calculation through fixed HERE endpoints. Active-user checks, a limit of 20 requests/minute and 200/day per user, and generic upstream errors apply. These are request limits, not a financial spending cap.
+Deploy backend/navigation-free.sql after backend/navigation.sql. This additive migration overrides public navigation RPCs and stores the free key in a separate private table. Fixed endpoints use the current api.heigit.org/openrouteservice/v2/directions and api.heigit.org/pelias/v1/search; the deprecated API host is not used. Keys are never returned to clients. Role checks, user limits of 200/day and 20/minute, plus conservative shared-key limits of 1,900 route and 900 search requests/day and 35/minute each, stop excess calls. There is no automatic purchase or paid fallback. Provider quotas can also apply outside this app.
 
-Truck measurements must be reviewed and confirmed. Dimensions are sent in centimetres and weights in kilograms, with axles, trailers, Euro class and CO2 class. Critical route restriction notices disable guidance. Avoiding tolls is a preference; **Tylko bezpłatne** additionally rejects routes with tolls, incomplete tariff information or toll-avoidance violations. Fare alternatives form a price range; repeated fare IDs across sections are counted once. Missing currency conversion or tariffs remain visibly incomplete.
+Tests cover GeoJSON, incomplete toll data, route restrictions, manual budgets, authenticated HTTP mapping, secret handling, shared quotas, GPS and mobile/desktop layouts. tests/free-navigation-db.sql rolls back all changes and issues no external requests, so it can validate production before activation. HTTP fixtures are CI-only and must never be deployed. Live service availability still needs the owner's free key; fixture tests do not establish this.
 
-## GPS and privacy
+The free-navigation workflow validates and uploads the complete web package, verifies its bytes with authenticated download, then runs production migration/checks and update activation in one transaction. Existing Android 6.1 receives the web update without another APK installation.
 
-Android 6.1 (version code 17) requests location permission when GPS is started. It uses Android location services and Polish text-to-speech while IMPERIUM is visible, with rerouting on sustained deviation. Guidance pauses when the app is hidden. This is not offline or background navigation. Older APKs can plan routes but need the 6.1 APK for native GPS. Current positions are not stored in the application database or shared with other members. HERE receives route/search inputs needed for calculations; the map uses attributed OpenStreetMap tiles with normal HTTP caching and no offline downloads.
-
-## Validation and release
-
-`tests/navigation-core.cjs` checks polyline decoding, fare alternatives/deduplication, incomplete prices, costs and route restrictions. `tests/navigation-http.cjs` checks the proxy with a local HTTP fixture and role/quota checks. `tests/navigation-db.sql` uses a savepoint and rollback and is safe to run against production without issuing external requests. `tests/navigation-http-fixture.sql` is CI-only and must never be deployed. Browser tests mock routing and tiles and exercise setup, profiles, comparison, GPS, stale requests and mobile layout.
-
-The navigation release workflow validates PostgreSQL, browser behavior and Android compilation before signing the APK. It uploads and verifies the web package before the migration and update activation transaction. Live HERE responses and tariffs still require verification with the owner's configured HERE account; fixture tests do not establish live provider availability.
+Provider references, checked 2026-10-11:
+- https://account.heigit.org/info/plans
+- https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/routing-options
+- https://giscience.github.io/openrouteservice/api-reference/endpoints/directions/extra-info/
+- https://ask.openrouteservice.org/t/deprecating-api-openrouteservice-org-in-favour-of-api-heigit-org/7912
