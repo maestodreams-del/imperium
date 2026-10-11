@@ -138,11 +138,11 @@ function hasOwnerAccess(){
 }
 function reductionAccess(){return {recipient:false,owner:hasOwnerAccess(),locked:OWNER_ONLY_ACCESS&&!hasOwnerAccess()};}
 function umbrellaMark(){return '<img class="umbrella-mark" src="icons/icon.svg" alt="Umbrella" width="48" height="48">';}
-function moduleItems(){return [['announcements','Ogłoszenia'],['browser','Przeglądarka'],['youtube','YouTube'],['locations','Obiekty'],['inspections','Przeglądy'],['rentals','Najem'],['invoices','Faktury'],['important','Ważne'],['activity','Aktywność'],['attendance','Meldunek'],['chat','Czat'],['team','Zespół'],['profile','Profil'],['salary','Wynagrodzenia'],['settings','Ustawienia']];}
+function moduleItems(){const items=[['announcements','Ogłoszenia'],['browser','Przeglądarka'],['youtube','YouTube'],['locations','Obiekty'],['inspections','Przeglądy'],['rentals','Najem'],['important','Ważne'],['chat','Wiadomości'],['team','Kontakty'],['profile','Mój profil'],['settings','Ustawienia']];return hasOwnerAccess()||state.mode==='demo'?items:items.filter(([id])=>['announcements','chat','team','profile'].includes(id));}
 function renderModuleNavigation(){
  const items=moduleItems();
- return `<aside class="bio-sidebar" aria-label="Moduły aplikacji"><div class="sidebar-label">CENTRUM OPERACYJNE</div>${items.map(([id,label])=>nav(id,label)).join('')}<div class="sidebar-footer"><span class="bio-status-dot"></span> Dostęp właściciela<small>IMPERIUM · BIOTECH DIVISION</small></div></aside>
- <nav class="bio-mobile-nav" aria-label="Główna nawigacja">${[['announcements','Ogłoszenia'],['browser','Internet'],['youtube','YouTube'],['chat','Czat']].map(([id,label])=>nav(id,label)).join('')}<button class="navitem ${state.moduleMenu?'active':''}" id="module-menu" aria-label="Wszystkie moduły" aria-expanded="${state.moduleMenu}"><i>${imperialIcon('modules')}</i><span>Moduły</span></button></nav>
+ return `<aside class="bio-sidebar" aria-label="Moduły aplikacji"><div class="sidebar-label">CENTRUM OPERACYJNE</div>${items.map(([id,label])=>nav(id,label)).join('')}<div class="sidebar-footer"><span class="bio-status-dot"></span> ${hasOwnerAccess()?'Dostęp właściciela':'Sieć uczestników'}<small>IMPERIUM · BIOTECH DIVISION</small></div></aside>
+ <nav class="bio-mobile-nav" aria-label="Główna nawigacja">${[['announcements','Ogłoszenia'],['team','Kontakty'],['chat','Wiadomości'],['profile','Mój profil']].map(([id,label])=>nav(id,label)).join('')}<button class="navitem ${state.moduleMenu?'active':''}" id="module-menu" aria-label="Wszystkie moduły" aria-expanded="${state.moduleMenu}"><i>${imperialIcon('modules')}</i><span>Moduły</span></button></nav>
  ${state.moduleMenu?`<div class="module-backdrop"><section class="module-drawer" role="dialog" aria-modal="true" aria-labelledby="module-title"><header><div><div class="eyebrow">IMPERIUM / MODUŁY</div><h2 id="module-title">Wszystko pod kontrolą</h2></div><button class="iconbtn" id="close-modules" aria-label="Zamknij moduły">×</button></header><div class="module-grid">${items.map(([id,label])=>nav(id,label)).join('')}</div></section></div>`:''}`;
 }
 function reductionNotice(){
@@ -274,7 +274,7 @@ async function refreshSession(){
 async function cloudFetch(path,{method='GET',body=null,headers={},raw=false,auth=true}={}){
   if(OWNER_ONLY_ACCESS && !hasOwnerAccess() && !path.startsWith('/auth/v1/')){
     const permitted=(method==='GET'&&(path.startsWith('/rest/v1/app_updates?')||path==='/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk')) ||
-      (method==='POST'&&['imperium_access_status','imperium_comms_feed','imperium_ack_announcement','imperium_register_notice_device','imperium_revoke_notice_device'].some(name=>path==='/rest/v1/rpc/'+name));
+      (method==='POST'&&['imperium_access_status','imperium_comms_feed','imperium_ack_announcement','imperium_register_notice_device','imperium_revoke_notice_device','imperium_social_directory','imperium_social_save_card','imperium_social_inbox','imperium_social_thread','imperium_social_send','imperium_social_read'].some(name=>path==='/rest/v1/rpc/'+name));
     if(!permitted)throw new Error('Dostęp do aplikacji jest obecnie ograniczony do właściciela.');
   }
   const c=cloudConfig(); if(!c) throw new Error('Brak konfiguracji chmury.');
@@ -298,6 +298,7 @@ async function signInCloud(email,password){
 }
 async function signUpCloud(){throw new Error('Rejestracja jest obecnie zamknięta.');}
 async function signOutCloud(){
+  window.ImperiumSocial.disconnect();
   await window.ImperiumComms.logout();
   try{await cloudFetch('/auth/v1/logout',{method:'POST'});}catch(e){}
   localStorage.removeItem(AUTH_KEY); state.auth=null; state.db=null;state.ownerAccess=false;state.verifiedOwnerId=null;state.moduleMenu=false; stopPolling(); render();
@@ -350,7 +351,7 @@ async function loadRestrictedAccount(){
   state.ownerAccess=false;state.verifiedOwnerId=null;state.salaryManager=false;
   state.db={version:2,users:[{id:user.id,name:user.user_metadata?.full_name||user.email||'Użytkownik',role:'worker',active:true,locationIds:[]}],locations:[],tasks:[],events:[],coinTransactions:[]};
   state.attendance=[];state.shifts=[];state.inspections=[];state.rentals=[];state.rentalRooms=[];state.rentalDocuments=[];state.invoiceSellers=[];state.invoiceDrafts=[];state.vouchers=[];state.rentalActions=[];state.importantAlerts=[];state.salaryCompensations=[];state.salaryAdjustments=[];state.salaryPots=[];state.salaryAdditions=[];
-  stopPolling();await window.ImperiumComms.connect(user.id);state.loading=false;render();
+  stopPolling();await Promise.all([window.ImperiumComms.connect(user.id),window.ImperiumSocial.connect(user.id)]);state.loading=false;render();
   checkImperiumUpdate().catch(()=>{});
 }
 async function loadCloudDB({silent=false}={}){
@@ -360,7 +361,7 @@ async function loadCloudDB({silent=false}={}){
     const access=await cloudFetch('/rest/v1/rpc/imperium_access_status',{method:'POST',body:{}});
     if(access!==true)return loadRestrictedAccount();
     state.ownerAccess=true;state.verifiedOwnerId=state.auth.user.id;
-    await window.ImperiumComms.connect(state.auth.user.id);
+    await Promise.all([window.ImperiumComms.connect(state.auth.user.id),window.ImperiumSocial.connect(state.auth.user.id)]);
     if(state.tab==='notice')state.tab='announcements';
     if(!state.alertsLoaded){state.alertsLoaded=true;await cloudFetch('/rest/v1/rpc/refresh_important_alerts',{method:'POST',body:{}}).catch(()=>{});}
     const [profiles,locations,pls,tasks,comments,atts,events,discipline,coins,attendance,inspections,rentals,vouchers,shifts,rentalActions,importantAlerts,rentalRooms,rentalDocuments,invoiceSellers,invoiceDrafts,salaryManager]=await Promise.all([
@@ -409,7 +410,7 @@ async function loadCloudDB({silent=false}={}){
     if(!silent){
   checkImperiumUpdate().catch(()=>{});
 }
-    if(!window.ImperiumComms.state.compose && (!silent || (!state.modal && state.tab!=='chat' && state.tab!=='salary' && !(state.tab==='profile'&&(publicProfileId||state.profileView==='messages')) && !document.activeElement?.closest('.shift-admin')))) render();
+    if(!window.ImperiumComms.state.compose && !window.ImperiumSocial.state.editing && !document.activeElement?.matches('input,textarea,select') && (!silent || (!state.modal && state.tab!=='chat' && state.tab!=='salary' && !(state.tab==='profile'&&(publicProfileId||state.profileView==='messages')) && !document.activeElement?.closest('.shift-admin')))) render();
     if(isAdmin() && state.db.locations.length===0){ try{await cloudFetch('/rest/v1/rpc/seed_default_locations',{method:'POST',body:{}});await sleep(300);return loadCloudDB({silent:false});}catch(e){} }
   }catch(e){
     state.loading=false;state.cloudError=e.message;state.ownerAccess=false;state.verifiedOwnerId=null;
@@ -479,7 +480,7 @@ function imperialIcon(id){
     profile:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4.2 2.8-7 7-7s7 2.8 7 7"/></svg>',salary:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M3 8h18M16 12h5v5h-5z"/><circle cx="17" cy="14.5" r=".6"/></svg>',settings:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>'
   };return p[id]||'';
 }
-function nav(id,label,extra=''){const locked=reductionAccess().locked&&id!=='notice';return `<button class="navitem ${state.tab===id?'active':''} ${extra} ${locked?'navitem-locked':''}" data-tab="${id}" ${locked?'disabled aria-disabled="true" title="Sekcja zablokowana przez kierownictwo"':''}><i>${imperialIcon(id)}</i><span>${label}</span></button>`;}
+function nav(id,label,extra=''){const locked=reductionAccess().locked&&!['announcements','team','chat','profile'].includes(id);return `<button class="navitem ${state.tab===id?'active':''} ${extra} ${locked?'navitem-locked':''}" data-tab="${id}" ${locked?'disabled aria-disabled="true" title="Sekcja zablokowana przez kierownictwo"':''}><i>${imperialIcon(id)}</i><span>${label}</span>${id==='chat'?window.ImperiumSocial.badge():''}</button>`;}
 function chip(id,label){return `<button class="chip ${state.filter===id?'active':''}" data-filter="${id}">${label}</button>`;}
 function render(){
   if(state.loading)return;
@@ -501,7 +502,7 @@ function render(){
   }
   if(!state.mode)return state.modal==='cloudSetup'?renderOverlayOn(renderSetup,renderCloudSetupModal):renderSetup();
   const u=currentUser(); if(!u){if(state.mode==='cloud'){localStorage.removeItem(AUTH_KEY);state.auth=null;state.db=null;return renderCloudLogin();}state.demoSession=null;return renderDemoLogin();}
-  if(['tasks','game','notice'].includes(state.tab))state.tab='announcements';
+  if(['tasks','game','notice','invoices','activity','attendance','salary'].includes(state.tab))state.tab='announcements';
   const reduction=reductionAccess();
   if(reduction.locked)return renderRestrictedApp(u);
   if(state.mode==='demo'){state.attendance=state.db.attendance||[];state.inspections=state.db.inspections||[];state.rentals=state.db.rentals||[];state.rentalRooms=state.db.rentalRooms||[];state.rentalDocuments=state.db.rentalDocuments||[];state.invoiceSellers=state.db.invoiceSellers||[];state.invoiceDrafts=state.db.invoiceDrafts||[];state.rentalActions=state.db.rentalActions||[];state.importantAlerts=demoImportantAlerts();}
@@ -512,26 +513,29 @@ function render(){
   app.innerHTML=`<div class="app aureus-shell bio-shell">
   <header class="topbar"><div class="topbar-inner">
     <div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · BIOTECH DIVISION</small></div></div>
-    <div class="top-actions">${profileMessengerButton()}<span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">Dostęp właściciela</span>${hasOwnerAccess()?'<button class="command-add" data-compose aria-label="Nowe ogłoszenie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
+    <div class="top-actions">${profileMessengerButton()}<button class="social-avatar-button" data-contact="${esc(u.id)}" aria-label="Moja karta kontaktu">${window.ImperiumSocial.avatar(window.ImperiumSocial.contact(u.id)||{name:u.name},'top-avatar')}</button><span class="system-dot ${state.mode==='cloud'?'online':'offline'}"></span><span class="command-role">Dostęp właściciela</span>${hasOwnerAccess()?'<button class="command-add" data-compose aria-label="Nowe ogłoszenie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>':''}<button class="command-exit" id="logout" title="Wyloguj" aria-label="Wyloguj"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H4v14h5M9 12h12M17 8l4 4-4 4"/></svg></button></div>
   </div></header>
-  <main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1]||'Centrum operacyjne')}<small>PRIVATE TERMINAL</small></div>${state.tab==='announcements'?window.ImperiumComms.render():''}${state.tab==='browser'?window.ImperiumComms.browserPage(false):''}${state.tab==='youtube'?window.ImperiumComms.browserPage(true):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?renderChatPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
+  <main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1]||'Centrum operacyjne')}<small>PRIVATE TERMINAL</small></div>${state.tab==='announcements'?window.ImperiumComms.render():''}${state.tab==='browser'?window.ImperiumComms.browserPage(false):''}${state.tab==='youtube'?window.ImperiumComms.browserPage(true):''}${state.tab==='locations'?renderLocationsPage():''}${state.tab==='inspections'?renderInspectionsPage():''}${state.tab==='rentals'?renderRentalsPage():''}${state.tab==='invoices'?renderInvoicesPage():''}${state.tab==='activity'?renderActivityPage():''}${state.tab==='important'?renderImportantPage():''}${state.tab==='attendance'?renderAttendancePage():''}${state.tab==='chat'?window.ImperiumSocial.messagesPage():''}${state.tab==='team'?renderTeamPage():''}${state.tab==='profile'?renderProfilePage():''}${state.tab==='salary'?renderSalaryPage():''}${state.tab==='settings'?renderSettingsPage():''}</main>
   ${renderModuleNavigation()}
   ${renderModal()}</div>`;
   const bottomNav=app.querySelector('.bottomnav-inner');
   if(bottomNav)bottomNav.scrollLeft=bottomNavScrollLeft;
-  bind();window.ImperiumComms.bind();if(['browser','youtube'].includes(state.tab))window.ImperiumComms.bindBrowser(state.tab==='youtube');
+  bind();window.ImperiumSocial.bind();window.ImperiumComms.bind();if(['browser','youtube'].includes(state.tab))window.ImperiumComms.bindBrowser(state.tab==='youtube');
   document.getElementById('module-menu')?.addEventListener('click',()=>{state.moduleMenu=true;render();document.getElementById('close-modules')?.focus();});
   document.getElementById('close-modules')?.addEventListener('click',()=>{state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();});
   const drawer=app.querySelector('.module-drawer');
   drawer?.addEventListener('keydown',e=>{if(e.key==='Escape'){state.moduleMenu=false;render();document.getElementById('module-menu')?.focus();}if(e.key==='Tab'){const buttons=[...drawer.querySelectorAll('button')];const first=buttons[0],last=buttons.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});
 
 }
-// Participants see only their announcement feed; operational data is discarded.
+// Participants can use announcements, contact cards and private messages only.
 function renderRestrictedApp(u){
- if(window.ImperiumComms.state.active&&window.ImperiumComms.userId()===u.id){
-  state.tab='announcements';state.modal=null;state.moduleMenu=false;
-  app.innerHTML=`<div class="app bio-shell participant-shell"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · COMMUNICATIONS</small></div></div><button class="ghost" id="logout" aria-label="Wyloguj się">Wyloguj</button></div></header><main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>Ogłoszenia</div>${window.ImperiumComms.render()}</main></div>`;
-  window.ImperiumComms.bind();document.getElementById('logout').onclick=signOutCloud;return;
+ if((window.ImperiumComms.state.active&&window.ImperiumComms.userId()===u.id)||(window.ImperiumSocial.state.active&&window.ImperiumSocial.userId()===u.id)){
+  if(!['announcements','team','chat','profile'].includes(state.tab))state.tab='announcements';state.modal=null;
+  app.innerHTML=`<div class="app bio-shell participant-shell"><header class="topbar"><div class="topbar-inner"><div class="brand"><div class="sigil">${umbrellaMark()}</div><div class="brand-copy"><h1>IMPERIUM</h1><small>UMBRELLA · PEOPLE NETWORK</small></div></div><div class="top-actions">${profileMessengerButton()}<button class="ghost" id="logout" aria-label="Wyloguj się">Wyloguj</button></div></div></header><main class="content"><div class="bio-breadcrumb"><span>IMPERIUM</span><b>/</b>${esc(moduleItems().find(x=>x[0]===state.tab)?.[1])}</div>${state.tab==='announcements'?window.ImperiumComms.render():state.tab==='team'?window.ImperiumSocial.directoryPage():state.tab==='chat'?window.ImperiumSocial.messagesPage():window.ImperiumSocial.profilePage()}</main>${renderModuleNavigation()}</div>`;
+  window.ImperiumComms.bind();window.ImperiumSocial.bind();document.getElementById('logout').onclick=signOutCloud;
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.moduleMenu=false;if(state.tab==='profile')window.ImperiumSocial.state.contact=u.id;render();});
+  document.getElementById('module-menu').onclick=()=>{state.moduleMenu=true;render();document.getElementById('close-modules')?.focus();};
+  document.getElementById('close-modules')?.addEventListener('click',()=>{state.moduleMenu=false;render();});return;
  }
  state.tab='notice';state.modal=null;state.moduleMenu=false;
  if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}
@@ -940,9 +944,7 @@ async function adminStopAttendance(userId){
   });
 }
 function renderActivityPage(){return `<div class="toolbar"><div><div class="eyebrow">Dziennik</div><h2 class="section-title">Aktywność</h2></div></div><div class="settings-card">${state.db.events.slice(0,100).map(e=>`<div class="activity"><p>${esc(e.text)}</p><small>${fmtDate(e.createdAt)}</small></div>`).join('')||'<div class="empty">Brak zdarzeń.</div>'}</div>`;}
-function renderTeamPage(){
- return `<div class="toolbar"><div><div class="eyebrow">UCZESTNICY</div><h2 class="section-title">Zespół</h2></div></div><div class="status-note">Uczestnicy mają dostęp do ogłoszeń. Pozostałe moduły pozostają prywatne.</div><div class="list">${state.db.users.map(u=>`<div class="row"><div class="row-left"><div class="avatar">${initials(u.name)}</div><div class="row-main"><b>${esc(u.name)}</b><small>${u.active?'Aktywny':'Nieaktywny'} · ${u.id===state.verifiedOwnerId?'Właściciel':u.role==='admin'?'Administrator':'Pracownik'}</small></div></div><div class="row-actions"><button class="smallbtn" data-public-profile="${u.id}">Profil</button>${isAdmin()?`<button class="smallbtn" data-edit-user="${u.id}">Edytuj</button>`:''}</div></div>`).join('')}</div>`;
-}
+function renderTeamPage(){return window.ImperiumSocial.directoryPage();}
 
 function taskProgressStats(userId){
   const all=state.db.tasks||[], mine=all.filter(t=>t.claimedBy===userId||t.assignedTo===userId);
@@ -952,46 +954,13 @@ function taskProgressStats(userId){
 function renderProgressBar(label,done,total,pct,extra=''){
   return `<div class="progress-module"><div class="progress-head"><div><span>${label}</span><b>${done} / ${total}</b></div><strong>${pct}%</strong></div><div class="progress-track"><i style="width:${Math.max(0,Math.min(100,pct))}%"></i></div>${extra?`<small>${extra}</small>`:''}</div>`;
 }
-let publicProfileId=null, profileMessages=[], profileUnread=0, profileMessageTimer=null, profileMessageBusy=false, profileSendBusy=false;
-function profileMessengerButton(){return `<button id="profile-messenger" class="messenger-round ${profileUnread?'has-unread':''}" aria-label="Wiadomości w moim profilu${profileUnread?': '+profileUnread+' nieprzeczytanych':''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4zM8 8h8M8 12h6"/></svg><span class="messenger-count" ${profileUnread?'':'hidden'}>${profileUnread>99?'99+':profileUnread}</span></button>`;}
-function profileMessageNavigation(){return `<div class="profile-tabs"><button class="smallbtn" data-profile-home>Mój profil</button><button class="smallbtn" data-profile-inbox>Moje wiadomości${profileUnread?' ('+profileUnread+')':''}</button><button class="smallbtn" data-profile-members>Uczestnicy</button></div>`;}
-function openPublicProfile(id){const u=getUser(id);if(!u)return;state.modal=null;state.tab='profile';publicProfileId=id===currentUser().id?null:id;state.profileView=publicProfileId?'visitor':'mine';profileMessages=[];render();}
-function openProfileInbox(){state.modal=null;state.tab='profile';state.profileView='messages';publicProfileId=null;profileMessages=[];render();}
-function renderPublicProfile(){const u=getUser(publicProfileId);if(!u){publicProfileId=null;return renderProfilePage();}return `<section class="profile-page">${profileMessageNavigation()}<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PROFIL UCZESTNIKA</div><h2>${esc(u.name)}</h2><p>Dostęp właściciela${u.active?'':' · nieaktywny'}</p></div></div></div>${renderProfileMessages(u)}</section>`;}
-function renderProfileMessages(u=currentUser()){const own=u.id===currentUser().id;return `<section class="profile-messages panel" data-profile-target="${esc(u.id)}"><h3>${own?'Moje wiadomości':'Wiadomości do: '+esc(u.name)}</h3><p class="subtle">${own?'Odebrane i wysłane wiadomości. Wybierz nadawcę, aby odpowiedzieć.':'Korespondencję widzisz tylko Ty i '+esc(u.name)+'.'}</p><div id="profile-message-list" class="profile-message-list"><div class="empty compact">Ładowanie wiadomości…</div></div>${own?'':u.active?`<div class="profile-message-compose"><textarea id="profile-message-input" rows="3" maxlength="2000" placeholder="Napisz wiadomość…" aria-label="Wiadomość do uczestnika"></textarea><button id="profile-message-send" class="goldbtn">Wyślij wiadomość</button></div>`:'<p class="subtle">Konto nieaktywne — wysyłanie wyłączone.</p>'}<div id="profile-message-error" class="danger-text" role="status"></div></section>`;}
-function profileVisibleMessages(target){const me=currentUser().id;return profileMessages.filter(m=>target===me?(m.receiver_id===me||m.sender_id===me):(m.receiver_id===target&&m.sender_id===me||m.sender_id===target&&m.receiver_id===me));}
-function updateProfileMessenger(){const old=document.getElementById('profile-messenger');if(old){old.outerHTML=profileMessengerButton();document.getElementById('profile-messenger').onclick=openProfileInbox;}}
-function ensureProfileMessagePolling(){if(!currentUser())return;if(!profileMessageTimer)profileMessageTimer=setInterval(()=>{if(document.visibilityState!=='hidden')loadProfileMessages();},5000);loadProfileMessages();}
-async function loadProfileMessages(){
-  const me=currentUser()?.id;if(!me||profileMessageBusy)return;profileMessageBusy=true;const target=publicProfileId||me,show=state.tab==='profile'&&(!!publicProfileId||state.profileView==='messages');
-  try{
-    if(state.mode==='demo'){profileMessages=state.db.profileMessages||[];profileUnread=profileMessages.filter(m=>m.receiver_id===me&&!m.read_at).length;}
-    else{profileUnread=Number(await cloudFetch('/rest/v1/rpc/profile_message_unread_count',{method:'POST',body:{}}))||0;if(show)profileMessages=await pgGet(`profile_messages?select=id,sender_id,receiver_id,body,created_at,read_at&${target===me?'or=(sender_id.eq.'+me+',receiver_id.eq.'+me+')':'or=(and(sender_id.eq.'+me+',receiver_id.eq.'+target+'),and(sender_id.eq.'+target+',receiver_id.eq.'+me+'))'}&order=created_at.desc&limit=200`);}
-    if(currentUser()?.id!==me)return;updateProfileMessenger();
-    const box=document.getElementById('profile-message-list');if(!show||state.tab!=='profile'||(publicProfileId||me)!==target||!box)return;
-    const rows=profileVisibleMessages(target),fingerprint=JSON.stringify(rows),scroll=box.scrollTop;
-    if(box.dataset.fingerprint!==fingerprint){box.innerHTML=rows.map(m=>{const mine=m.sender_id===me,other=mine?m.receiver_id:m.sender_id;return `<article class="profile-message ${mine?'sent':'received'}"><div><button class="profile-author" data-public-profile="${esc(other)}">${mine?'Do: ':'Od: '}${esc(getUser(other)?.name||'Uczestnik')}</button><small>${fmtDate(m.created_at)}${!mine&&!m.read_at?' · NOWA':''}</small></div><p>${esc(m.body)}</p>${!mine?`<button class="smallbtn" data-public-profile="${esc(other)}">Odpowiedz</button>`:''}</article>`;}).join('')||'<div class="empty compact">Brak wiadomości. Rozpocznij rozmowę.</div>';box.dataset.fingerprint=fingerprint;box.scrollTop=scroll;bindPublicProfileLinks(box);}
-    const ids=rows.filter(m=>m.receiver_id===me&&!m.read_at).map(m=>m.id);
-    if(ids.length&&document.visibilityState!=='hidden'){
-      if(state.mode==='demo'){for(const m of profileMessages)if(ids.includes(m.id))m.read_at=nowISO();saveDemoDB();}
-      else await cloudFetch('/rest/v1/rpc/mark_profile_messages_read',{method:'POST',body:{p_ids:ids}});
-      if(currentUser()?.id!==me)return;profileUnread=Math.max(0,profileUnread-ids.length);updateProfileMessenger();
-    }
-  }catch(e){const box=document.getElementById('profile-message-error');if(box)box.textContent='Nie udało się pobrać wiadomości: '+e.message;}finally{profileMessageBusy=false;}
-}
-async function sendProfileMessage(){if(profileSendBusy)return;const target=publicProfileId,u=getUser(target),input=document.getElementById('profile-message-input'),body=input?.value.trim();if(!u?.active||!body)return;profileSendBusy=true;const button=document.getElementById('profile-message-send');button.disabled=true;
-  try{if(state.mode==='demo'){state.db.profileMessages ||= [];state.db.profileMessages.unshift({id:uid(),sender_id:currentUser().id,receiver_id:target,body,created_at:nowISO(),read_at:null});saveDemoDB();}
-    else await pgPost('profile_messages',{sender_id:currentUser().id,receiver_id:target,body});if(input.isConnected)input.value='';await loadProfileMessages();toast('Wiadomość wysłana.');
-  }catch(e){toast('Nie udało się wysłać: '+e.message);}finally{profileSendBusy=false;if(button.isConnected)button.disabled=false;}}
+let publicProfileId=null, profileMessages=[], profileUnread=0, profileMessageTimer=null;
+function profileMessengerButton(){return `<button id="profile-messenger" data-social-inbox class="messenger-round" aria-label="Moje wiadomości"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H9l-5 4V4zM8 8h8M8 12h6"/></svg>${window.ImperiumSocial.badge()}</button>`;}
+function openPublicProfile(id){window.ImperiumSocial.openContact(id);}
+function openProfileInbox(){state.tab='chat';render();}
 function bindPublicProfileLinks(root=document){root.querySelectorAll('[data-public-profile]').forEach(b=>b.onclick=()=>openPublicProfile(b.dataset.publicProfile));}
-function bindProfileMessaging(){bindPublicProfileLinks();document.getElementById('profile-messenger')?.addEventListener('click',openProfileInbox);document.querySelectorAll('[data-profile-inbox]').forEach(b=>b.onclick=openProfileInbox);document.querySelectorAll('[data-profile-home]').forEach(b=>b.onclick=()=>{publicProfileId=null;state.profileView='mine';state.tab='profile';render();});document.querySelectorAll('[data-profile-members]').forEach(b=>b.onclick=()=>{state.tab='team';render();});document.getElementById('profile-message-send')?.addEventListener('click',sendProfileMessage);document.getElementById('profile-message-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();sendProfileMessage();}});ensureProfileMessagePolling();}
-
-function renderProfilePage(){
- if(publicProfileId)return renderPublicProfile();
- if(state.profileView==='messages')return `<section class="profile-page">${profileMessageNavigation()}${renderProfileMessages()}</section>`;
- const u=currentUser();
- return `<section class="profile-page">${profileMessageNavigation()}<div class="profile-command"><div class="profile-ident"><div class="profile-monogram">${initials(u.name)}</div><div><div class="eyebrow">PERSONAL FILE</div><h2>${esc(u.name)}</h2><p>${u.role==='admin'?'ADMINISTRATOR':'PRACOWNIK'} · ${u.locationIds.map(id=>esc(getLoc(id)?.name)).filter(Boolean).join(' / ')||'CENTRALA'}</p></div></div></div><div class="settings-card"><h3>Mój grafik pracy</h3>${shiftsFor(u.id).filter(s=>new Date(s.endsAt)>Date.now()-86400000).slice(0,20).map(s=>`<div class="shift-row"><b>${esc(getLoc(s.locationId)?.name||'Obiekt')}</b><small>${fmtDate(s.startsAt)} → ${fmtDate(s.endsAt)}</small></div>`).join('')||'<p>Brak zaplanowanych zmian.</p>'}</div></section>`;
-}
+function bindProfileMessaging(){bindPublicProfileLinks();}
+function renderProfilePage(){return window.ImperiumSocial.profilePage();}
 
 const teamDayFormat=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Warsaw',year:'numeric',month:'2-digit',day:'2-digit'});
 const teamDay=iso=>teamDayFormat.format(new Date(iso));
@@ -1300,35 +1269,9 @@ function bindCloudSetup(){
   document.getElementById('import-cloud-code')?.addEventListener('click',()=>{try{const c=parseConfigCode(document.getElementById('cloud-code').value);document.getElementById('cloud-url').value=c.url;document.getElementById('cloud-key').value=c.key;toast('Kod wczytany.');}catch(e){toast(e.message);}});
   document.getElementById('save-cloud')?.addEventListener('click',async()=>{try{saveCloudConfig(document.getElementById('cloud-url').value,document.getElementById('cloud-key').value);state.mode='cloud';state.modal=null;state.db=null;state.auth=null;localStorage.removeItem(AUTH_KEY);render();}catch(e){toast(e.message);}});
 }
-function bind(){document.querySelector('[data-bio-new-task]')?.addEventListener('click',()=>{taskCopyDraft=null;selectedFiles=[];state.modal='newTask';render();});bindExtraMissions();bindProfileMessaging();if(state.tab!=='chat'){stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);}if(state.tab==='chat'){
-  bindChatMedia();
-  setTimeout(()=>loadChatMessages(),0);
-  if(window.imperiumChatTimer){
-  clearInterval(window.imperiumChatTimer);
-  window.imperiumChatTimer=null;
-}
-setTimeout(()=>{
-  if(state.tab==='chat'){
-    window.imperiumChatTimer=setInterval(()=>{
-      if(state.tab==='chat' && document.visibilityState!=='hidden'){
-        loadChatMessages();
-      }
-    },5000);
-  }
-},100);
-  document.getElementById('chat-send')?.addEventListener('click',()=>{
-    sendChatMessage();
-  });
-
-  document.getElementById('chat-input')?.addEventListener('keydown',e=>{
-    if(e.key==='Enter'&&!e.shiftKey){
-      e.preventDefault();
-      sendChatMessage();
-    }
-  });
-}
+function bind(){bindProfileMessaging();stopChatAudio();closeChatPreview();clearInterval(window.imperiumChatTimer);
   if(state.modal==='cloudSetup'){bindCloudSetup();return;}
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.moduleMenu=false;state.tab=b.dataset.tab;if(state.tab==='profile'){publicProfileId=null;state.profileView='mine';}if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else if(state.tab==='salary'){render();loadSalaryMonth();}else render();});
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.moduleMenu=false;state.tab=b.dataset.tab;if(state.tab==='profile'){publicProfileId=null;state.profileView='mine';window.ImperiumSocial.state.contact=currentUser().id;}if(state.tab==='profile'&&state.profileView==='team'&&canViewTeamHours())loadTeamMonth();else if(state.tab==='salary'){render();loadSalaryMonth();}else render();});
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{state.filter=b.dataset.filter;render();});
   document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(state.pdfUrl){URL.revokeObjectURL(state.pdfUrl);state.pdfUrl=null;}state.invoicePdfBlob=null;state.modal=null;state.taskId=null;state.locationId=null;state.userId=null;state.roomId=null;selectedFiles=[];fileInput.value='';render();});
   bindSalary();
@@ -1943,6 +1886,7 @@ function initSeason(){
 }
 
 window.addEventListener('imperium-open-announcements',()=>{state.tab='announcements';window.ImperiumComms.refresh();render();});
+window.ImperiumSocial.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),tab:()=>state.tab,owner:hasOwnerAccess,render,navigate:tab=>{state.tab=tab;state.moduleMenu=false;state.modal=null;render();}});
 window.ImperiumComms.configure({rpc:(name,body)=>cloudFetch('/rest/v1/rpc/'+name,{method:'POST',body}),config:cloudConfig,render,downloadApk:async()=>{if(!window.AndroidBridge?.saveFile){window.open('https://github.com/maestodreams-del/imperium/releases/download/v6.0.0/IMPERIUM-6.0.0.apk','_blank','noopener');return;}const response=await cloudFetch('/storage/v1/object/app-updates/IMPERIUM-6.0.0.apk',{raw:true});const blob=await response.blob();await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{window.AndroidBridge.saveFile('IMPERIUM-6.0.0.apk','application/vnd.android.package-archive',String(reader.result).split(',')[1]);resolve();};reader.onerror=reject;reader.readAsDataURL(blob);});}});
 
 // The versioned first-run introduction lives outside the app render tree.

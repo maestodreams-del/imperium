@@ -11,11 +11,12 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
   const errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   // Exercise the retained local payroll model in an isolated response only.
+  // Test-only navigation exposes the retained historical payroll components. These tabs are removed in production.
   // Production keeps OWNER_ONLY_ACCESS=true; owner gate coverage is in biotech tests.
   await context.route('**/*',route => {
     const u=new URL(route.request().url());
     if(u.origin!==url)return route.abort();
-    if(u.pathname==='/app.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync('app.js','utf8').replace('const OWNER_ONLY_ACCESS = true;','const OWNER_ONLY_ACCESS = false;')});
+    if(u.pathname==='/app.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync('app.js','utf8').replace('const OWNER_ONLY_ACCESS = true;','const OWNER_ONLY_ACCESS = false;').replace("['settings','Ustawienia']];return","['settings','Ustawienia'],['salary','Wynagrodzenia'],['attendance','Meldunek']];return").replace("['tasks','game','notice','invoices','activity','attendance','salary']","['tasks','game','notice','invoices','activity']")});
     return route.continue();
   });
   await context.addInitScript(() => {
