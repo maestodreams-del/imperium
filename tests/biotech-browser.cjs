@@ -32,7 +32,7 @@ const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg
    else await page.locator(`.bio-sidebar [data-tab="${tab}"]`).click();
    const check=await page.evaluate(()=>({tab:window.biotechTest.state.tab,overflow:document.documentElement.scrollWidth>innerWidth+1,body:getComputedStyle(document.body).backgroundColor}));
    assert.equal(check.tab,tab);assert.equal(check.overflow,false,`${width} ${tab} fits`);assert.equal(check.body,'rgb(8, 12, 16)');
-   if(['salary','chat','invoices','settings'].includes(tab))await page.screenshot({path:`${out}/${width}-${tab}.png`,fullPage:true});
+   await page.screenshot({path:`${out}/${width}-${tab}.png`,fullPage:true});
   }
   if(width<861){await page.locator('#module-menu').click();await page.screenshot({path:`${out}/${width}-modules.png`});await page.locator('.module-grid [data-tab="tasks"]').click();}
   else await page.locator('.bio-sidebar [data-tab="tasks"]').click();

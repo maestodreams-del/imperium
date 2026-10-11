@@ -1,5 +1,7 @@
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+async function openTab(page,tab){await page.locator('#module-menu').click();await page.locator(`.module-grid [data-tab="${tab}"]`).click();}
 const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
 
 (async () => {
@@ -8,13 +10,21 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
   const page = await context.newPage();
   const errors=[];
   page.on('pageerror',e=>errors.push(e.message));
-  await context.route('**/*',route => new URL(route.request().url()).origin===url ? route.continue() : route.abort());
+  // Exercise the retained local payroll model in an isolated response only.
+  // Production keeps OWNER_ONLY_ACCESS=true; owner gate coverage is in biotech tests.
+  await context.route('**/*',route => {
+    const u=new URL(route.request().url());
+    if(u.origin!==url)return route.abort();
+    if(u.pathname==='/app.js')return route.fulfill({contentType:'text/javascript',body:fs.readFileSync('app.js','utf8').replace('const OWNER_ONLY_ACCESS = true;','const OWNER_ONLY_ACCESS = false;')});
+    return route.continue();
+  });
   await context.addInitScript(() => {
+    localStorage.setItem('imperium_biotech_intro_v1','complete');
     localStorage.setItem('imperium_mode_v2','demo');
     localStorage.setItem('imperium_demo_session_v2',JSON.stringify({userId:'u-admin'}));
   });
   await page.goto(url);
-  await page.locator('[data-tab="salary"]').click();
+  await openTab(page,'salary');
   await page.locator('#salary-worker').selectOption('u-zenon');
   assert.match(await page.locator('#salary-total-value').innerText(),/12\s*000,00/);
   assert.equal(await page.locator('.salary-bag,.salary-bags,.salary-fall').count(),0);
@@ -33,8 +43,8 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
   await page.locator('#salary-add-adjustment').click();
   assert.equal(await page.locator('#salary-history-rows>div').count(),2);
   for(const tab of ['tasks','attendance','team','profile','rentals','important','salary']){
-    await page.locator(`[data-tab="${tab}"]`).click();
-    assert.equal(await page.locator('.bottomnav').count(),1,`${tab} renders`);
+    await openTab(page,tab);
+    assert.equal(await page.locator('.bio-mobile-nav').count(),1,`${tab} renders`);
   }
   await page.evaluate(() => {
     const db=JSON.parse(localStorage.getItem('imperium_db_v2'));
@@ -43,15 +53,15 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
     localStorage.setItem('imperium_db_v2',JSON.stringify(db));
   });
   await page.reload();
-  await page.locator('[data-tab="attendance"]').click();
+  await openTab(page,'attendance');
   await page.locator('[data-admin-attendance-stop="u-olena"]').click();
-  await page.locator('[data-tab="salary"]').click();
+  await openTab(page,'salary');
   await page.locator('#salary-worker').selectOption('u-olena');
   assert.match(await page.locator('#salary-type').innerText(),/25,00/);
   const first=await page.evaluate(() => JSON.parse(localStorage.getItem('imperium_db_v2')).salaryAdjustments.filter(x=>x.attendance_id==='attendance-test'));
   assert.equal(first.length,1);
   assert.ok(Math.abs(first[0].amount_grosz-21250)<=25,'8.5 hours at 25 zł');
-  await page.locator('[data-tab="attendance"]').click();
+  await openTab(page,'attendance');
   await page.locator('[data-edit-attendance-start="attendance-test"]').click();
   await page.locator('#f-attendance-start').evaluate(el => {const d=new Date(new Date(el.value).getTime()+3600000);el.value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);});
   await page.locator('#save-attendance-start').click();
@@ -59,7 +69,7 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
   assert.equal(revised.length,1,'A correction updates the same attendance entry');
   assert.ok(revised[0].amount_grosz<first[0].amount_grosz-2450);
   await page.reload();
-  await page.locator('[data-tab="salary"]').click();
+  await openTab(page,'salary');
   await page.locator('#salary-worker').selectOption('u-zenon');
   assert.match(await page.locator('#salary-total-value').innerText(),/11\s*949,75/);
   assert.deepEqual(errors,[]);
@@ -80,7 +90,7 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
     if(u.hostname!=='payroll-test.invalid')return route.abort();
     const table=u.pathname.split('/').at(-1);
     let result=[];
-    if(table==='salary_is_manager')result=true;
+    if(table==='imperium_access_status'||table==='salary_is_manager')result=true;
     else if(table==='locations')result=[{id:'test-location',name:'Test site',active:true}];
     else if(table==='profile_locations')result=[{profile_id:'zenon',location_id:'test-location'}];
     else if(table==='profiles')result=[{id:'owner',full_name:'Owner',role:'admin',active:true},{id:'zenon',full_name:'Zenon',role:'worker',active:true}];
@@ -102,11 +112,12 @@ const url = process.env.IMPERIUM_TEST_URL || 'http://127.0.0.1:8769';
     await route.fulfill({contentType:'application/json',body:JSON.stringify(result)});
   });
   await cloud.addInitScript(()=>{
+    localStorage.setItem('imperium_biotech_intro_v1','complete');
     localStorage.setItem('imperium_mode_v2','cloud');
     localStorage.setItem('imperium_auth_v2',JSON.stringify({access_token:'nonproduction-fixture',user:{id:'owner'}}));
   });
   await cp.goto(url);
-  await cp.locator('[data-tab="salary"]').click();
+  await openTab(cp,'salary');
   await cp.waitForFunction(()=>!document.getElementById('salary-manager-controls')?.disabled);
   assert.equal(await cp.locator('#salary-fixed').inputValue(),'12000.00','Initial fetch hydrates rate editor');
   await cp.locator('#salary-amount').fill('150.25');
