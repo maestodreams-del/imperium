@@ -8,3 +8,5 @@ body.biotech .participant-shell{padding-left:230px;padding-bottom:0}body.biotech
 
 body.biotech .navitem>.social-unread[hidden]{display:none!important}
 body.biotech .navitem>.social-unread{display:flex!important;align-items:center;justify-content:center;font-size:9px!important;color:#fff!important;line-height:1!important}
+
+.avatar-editor>div:first-child{flex:0 0 auto}.avatar-editor>div:last-child{flex:1;min-width:0}
