@@ -41,10 +41,27 @@
   const cumulative=[0];for(let i=1;i<points.length;i++)cumulative.push(cumulative[i-1]+distance(points[i-1],points[i]));
   return {id:route.id,points,cumulative,actions,length,duration,costs,mode,critical,freeConfirmed,blocked:critical.length>0||(mode==='free'&&!freeConfirmed),arrival:sections.at(-1)?.arrival?.time||null};
  }
+ function parseORSRoute(feature,currency,mode){
+  const raw=feature?.geometry?.coordinates,p=feature?.properties||{},summary=p.summary||{};
+  if(feature?.geometry?.type!=='LineString'||!Array.isArray(raw)||raw.length<2||raw.some(x=>!Array.isArray(x)||x.length<2||!Number.isFinite(x[0])||!Number.isFinite(x[1])||Math.abs(x[0])>180||Math.abs(x[1])>90)||!Number.isFinite(summary.distance)||!(summary.distance>0)||!Number.isFinite(summary.duration))throw Error('Serwis nie zwrócił kompletnej trasy.');
+  const points=raw.map(x=>[x[1],x[0]]),cumulative=[0];for(let i=1;i<points.length;i++)cumulative.push(cumulative[i-1]+distance(points[i-1],points[i]));
+  const values=p.extras?.tollways?.values;let end=0,complete=Array.isArray(values)&&values.length>0,paid=false;
+  for(const item of values||[]){if(!Array.isArray(item)||item.length!==3||!item.every(Number.isInteger)||item[0]!==end||item[1]<=item[0]||item[1]>=points.length||![0,1].includes(item[2]))complete=false;end=item[1];if(item[2]===1)paid=true;}
+  complete=complete&&end===points.length-1;
+  const warnings=p.warnings||[],notices=warnings.map(w=>({code:String(w.code),title:w.message||'Serwis zgłosił ograniczenie trasy.',severity:'warning'}));
+  const critical=warnings.filter(w=>Number(w.code)!==4); // Missing extra info alone is handled by completeness; other warnings block guidance.
+  const freeConfirmed=complete&&!paid&&!warnings.length;
+  const tollSummary=p.extras?.tollways?.summary||[],tolled=tollSummary.filter(x=>x.value===1);
+  const tollDistance=complete&&(!paid||tolled.length>0)&&tolled.every(x=>Number.isFinite(x.distance)&&x.distance>=0)?tolled.reduce((a,x)=>a+x.distance,0):null;
+  const actions=(p.segments||[]).flatMap(s=>(s.steps||[]).map(a=>({offset:a.way_points?.[0]||0,instruction:a.instruction||a.name||'Kontynuuj jazdę'})));
+  return {id:feature.id,provider:'ORS',points,cumulative,actions,length:summary.distance,duration:summary.duration,mode,critical,freeConfirmed,tollDistance,manualTolls:null,costs:{low:0,high:0,unknown:true,paid,rows:[],currency,notices},blocked:critical.length>0||(mode==='free'&&!freeConfirmed),arrival:null};
+ }
  function tripCost(route,budget){
   const km=route.length/1000;const fuel=Number(budget.consumption)>0&&Number(budget.fuelPrice)>0?km*Number(budget.consumption)/100*Number(budget.fuelPrice):0;
   const running=Number(budget.rate)>0?km*Number(budget.rate):0;
-  return {fuel,running,low:route.costs.low+fuel+running,high:route.costs.high+fuel+running,unknown:route.costs.unknown,perKm:(route.costs.low+fuel+running)/km};
+  const manual=route.provider==='ORS'&&typeof route.manualTolls==='number'&&Number.isFinite(route.manualTolls)&&route.manualTolls>=0;
+  const low=route.provider==='ORS'?(manual?route.manualTolls:0):route.costs.low,high=route.provider==='ORS'?low:route.costs.high;
+  return {fuel,running,low:low+fuel+running,high:high+fuel+running,unknown:route.provider==='ORS'?!manual:route.costs.unknown,perKm:(low+fuel+running)/km};
  }
- const core={decodePolyline,distance,closest,tolls,parseRoute,tripCost};if(typeof module==='object'&&module.exports)module.exports=core;root.ImperiumNavigationCore=core;
+ const core={decodePolyline,distance,closest,tolls,parseRoute,parseORSRoute,tripCost};if(typeof module==='object'&&module.exports)module.exports=core;root.ImperiumNavigationCore=core;
 })(typeof window==='object'?window:globalThis);

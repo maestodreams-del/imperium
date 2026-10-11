@@ -1,0 +1,9 @@
+const assert=require('node:assert/strict'),C=require('../navigation-core.js');
+function fixture(paid=false){return {type:'Feature',geometry:{type:'LineString',coordinates:[[14.5,53.4],[14.6,53.3],[14.7,53.2]]},properties:{summary:{distance:100000,duration:3600},segments:[{steps:[{instruction:'Skręć w prawo',way_points:[1,2]}]}],extras:{tollways:{values:[[0,2,paid?1:0]],summary:[{value:paid?1:0,distance:100000,amount:100}]}}}};}
+let r=C.parseORSRoute(fixture(true),'PLN','allow');assert.deepEqual(r.points[0],[53.4,14.5]);assert.equal(r.tollDistance,100000);assert.equal(r.costs.unknown,true);assert.equal(r.blocked,false);assert.equal(C.parseORSRoute(fixture(true),'PLN','free').blocked,true);
+let cost=C.tripCost(r,{consumption:30,fuelPrice:6.5,rate:.5});assert.equal(cost.low,245);assert.equal(cost.unknown,true,'Fuel subtotal never claims to include missing toll prices');r.manualTolls=30;cost=C.tripCost(r,{consumption:30,fuelPrice:6.5,rate:.5});assert.equal(cost.low,275);assert.equal(cost.unknown,false);r.manualTolls=0;assert.equal(C.tripCost(r,{}).unknown,false,'A zero explicitly entered by the user is retained');
+r=C.parseORSRoute(fixture(false),'PLN','free');assert.equal(r.freeConfirmed,true);assert.equal(r.costs.unknown,true,'No marked toll road does not invent a tariff');
+let f=fixture();delete f.properties.extras;assert.equal(C.parseORSRoute(f,'PLN','free').blocked,true);
+f=fixture();f.properties.extras.tollways.values=[[1,2,0]];assert.equal(C.parseORSRoute(f,'PLN','free').blocked,true,'Partial toll annotation cannot verify free routing');
+f=fixture();f.properties.warnings=[{code:1,message:'Access restriction'}];assert.equal(C.parseORSRoute(f,'PLN','allow').blocked,true);
+console.log('PASS: ORS GeoJSON/coordinates, toll annotation completeness, restrictions, no invented tariffs and route-specific manual budgets.');

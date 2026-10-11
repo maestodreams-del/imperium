@@ -1,0 +1,110 @@
+name: Publish IMPERIUM Free Navigation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-free-navigation.yml']
+  pull_request:
+    paths: ['.github/workflows/publish-free-navigation.yml', 'navigation*', 'backend/navigation*.sql', 'tests/*navigation*', 'android-wrapper/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: imperium-free-navigation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: fixture-only
+          POSTGRES_DB: communications
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify bundle and DOM behavior
+        run: |
+          set -euo pipefail
+          for file in app.js navigation.js navigation-core.js communications.js startup.js sw.js; do node --check "$file"; done
+          for file in app.js navigation.js navigation-core.js navigation.css leaflet.js leaflet.css leaflet-LICENSE.txt communications.js communications.css social.js social.css startup.js biotech.css styles.css config.js index.html manifest.webmanifest sw.js icons/icon.svg; do cmp "$file" "android-wrapper/app/src/main/assets/$file"; done
+          npm install --prefix "$RUNNER_TEMP/comms-test" jsdom@26.1.0 playwright@1.58.2 @electric-sql/pglite@0.3.14 --no-audit --no-fund
+          NODE_PATH="$RUNNER_TEMP/comms-test/node_modules" node tests/biotech-dom.cjs
+          node tests/navigation-core.cjs
+          node tests/free-navigation-core.cjs
+          NODE_PATH="$RUNNER_TEMP/comms-test/node_modules" node tests/navigation-http.cjs
+          NODE_PATH="$RUNNER_TEMP/comms-test/node_modules" node tests/free-navigation-http.cjs
+      - name: Verify navigation on PostgreSQL
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: fixture-only
+          PGDATABASE: communications
+        run: |
+          sed '/^create extension if not exists http with schema extensions;/d' backend/navigation.sql > /tmp/navigation-ci.sql
+          psql -v ON_ERROR_STOP=1 --single-transaction -f tests/communications-db-fixture.sql -f tests/social-db-fixture.sql -f backend/profile-messages.sql -f backend/biotech-owner-access.sql -f backend/communications.sql -f backend/social.sql -f tests/navigation-http-fixture.sql -f /tmp/navigation-ci.sql -f /tmp/navigation-ci.sql -f tests/navigation-db.sql -f tests/free-navigation-http-fixture.sql -f backend/navigation-free.sql -f backend/navigation-free.sql -f tests/free-navigation-db.sql -f tests/social-db.sql
+      - name: Verify mobile and desktop interaction
+        env:
+          QA_OUTPUT: ${{ runner.temp }}/navigation-screenshots
+        run: |
+          "$RUNNER_TEMP/comms-test/node_modules/.bin/playwright" install --with-deps chromium
+          NODE_PATH="$RUNNER_TEMP/comms-test/node_modules" node tests/navigation-browser.cjs
+          NODE_PATH="$RUNNER_TEMP/comms-test/node_modules" node tests/biotech-browser.cjs
+          python3 -m http.server 8769 --bind 127.0.0.1 >"$RUNNER_TEMP/comms-http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..10}; do curl -fsS http://127.0.0.1:8769/index.html >/dev/null && break || sleep 1; done
+          NODE_PATH="$RUNNER_TEMP/comms-test/node_modules" node tests/salary-browser-smoke.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: IMPERIUM-Free-Navigation-screenshots
+          path: ${{ runner.temp }}/navigation-screenshots
+          if-no-files-found: ignore
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Allocate web version
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          version="$(psql "$SUPABASE_DB_URL" -Atqc 'select greatest(coalesce(max(version),0)+1,51) from public.app_updates')"
+          echo "WEB_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Package free navigation update
+        run: |
+          set -euo pipefail
+          mkdir -p package/icons package/sounds
+          for file in index.html app.js startup.js biotech.css communications.js communications.css social.js social.css navigation.js navigation-core.js navigation.css leaflet.js leaflet.css leaflet-LICENSE.txt styles.css config.js manifest.webmanifest sw.js invoice-format.js invoice-pdf.js pdf-lib.min.js fontkit.umd.min.js invoice-font-data.js invoice-font-LICENSE.txt pdf-lib-LICENSE.md fontkit-LICENSE.txt pdf.min.mjs pdf.worker.min.mjs pdfjs-LICENSE.txt salary-aurelia.webp; do cp "android-wrapper/app/src/main/assets/$file" package/; done
+          cp android-wrapper/app/src/main/assets/icons/icon.svg package/icons/
+          cp android-wrapper/app/src/main/assets/sounds/imperium_notification.mp3 package/sounds/
+          (cd package && zip -qr "../imperium-web-${WEB_VERSION}.zip" .)
+      - name: Upload and verify inactive update
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          url="https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip"
+          curl --fail-with-body -X POST "$url" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" -H "apikey: $SUPABASE_SECRET_KEY" -H 'Content-Type: application/zip' -H 'x-upsert: true' --data-binary "@imperium-web-${WEB_VERSION}.zip"
+          curl --fail-with-body "$url" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" -H "apikey: $SUPABASE_SECRET_KEY" --output /tmp/free-navigation.zip
+          cmp "imperium-web-${WEB_VERSION}.zip" /tmp/free-navigation.zip
+      - name: Activate free provider and web update atomically
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/activate-free-navigation.sql <<'SQL'
+          update public.app_updates set active=false where active=true;
+          insert into public.app_updates(version,version_name,package_url,active)
+          values (:'version'::integer,'IMPERIUM · Bezpłatna nawigacja ORS',:'package_url',true);
+          SQL
+          psql "$SUPABASE_DB_URL" --single-transaction -v ON_ERROR_STOP=1 -v version="$WEB_VERSION" -v package_url="https://kpqhmmietusedznadjjy.supabase.co/storage/v1/object/app-updates/imperium-web-${WEB_VERSION}.zip" -f backend/navigation-free.sql -f tests/free-navigation-db.sql -f /tmp/activate-free-navigation.sql
+          psql "$SUPABASE_DB_URL" -Atqc 'select version,version_name,active from public.app_updates where active=true'
+          psql "$SUPABASE_DB_URL" -Atqc 'select exists(select 1 from imperium_private.navigation_free_config) as free_provider_configured'
