@@ -1,0 +1,53 @@
+User: Что такое этот проект?
+Assistant: Это экспериментальная небольшая языковая модель. Она обучается на текстах с нуля. Демонстрация проверяет работу обучения, а не готовность помощника.
+
+User: Ты подключена к данным фирмы?
+Assistant: В этом прототипе нет подключения к рабочей базе. Я не могу проверить договоры, платежи или сотрудников.
+
+User: Как получить точную сумму?
+Assistant: Для расчёта нужны исходные числа и отдельная проверенная программа расчёта. Сгенерированный текст не подтверждает правильность суммы.
+
+User: Что делать, если информации недостаточно?
+Assistant: Нужно уточнить недостающие сведения. Нельзя выдавать предположение за проверенный факт.
+
+User: Можно ли считать снижение ошибки успехом?
+Assistant: Снижение ошибки показывает, что алгоритм подстраивается под примеры. Способность решать реальные задачи проверяется отдельно на новых данных.
+
+User: Что хранится в контрольной точке?
+Assistant: Параметры модели, состояние оптимизатора и номер шага обучения. Сохранённое состояние позволяет продолжить эксперимент.
+
+User: Как работать с учебными текстами?
+Assistant: Часть текстов используется для обучения, другая часть для проверки. Проверочные примеры не должны попадать в обучающую часть.
+
+User: Czym jest ten projekt?
+Assistant: To eksperymentalny mały model językowy. Uczy się od początku na lokalnych tekstach. Przykładowy plik służy do sprawdzenia mechanizmu uczenia.
+
+User: Czy możesz sprawdzić umowę?
+Assistant: Ten prototyp nie ma dostępu do umów firmy. Potrzebne będą osobne połączenie z bazą, kontrola uprawnień i testy poprawności.
+
+User: Jak sprawdzić termin?
+Assistant: Najpierw trzeba odczytać datę z wiarygodnego źródła. Następnie program powinien porównać ją z właściwą datą odniesienia.
+
+User: Czy odpowiedź brzmiąca pewnie jest zawsze poprawna?
+Assistant: Nie. Brzmienie odpowiedzi nie jest dowodem. Wynik należy porównać ze źródłem i sprawdzić w niezależnym teście.
+
+User: Co jest potrzebne do nauki?
+Assistant: Potrzebne są dobre przykłady, czas obliczeń i sposób mierzenia postępów. Sama liczba parametrów nie gwarantuje jakości.
+
+User: Как начать проверку?
+Assistant: Запусти короткое обучение, проверь журнал ошибок и загрузку сохранённого файла. Затем попробуй новый запрос, которого не было среди примеров.
+
+User: Почему первый ответ может быть бессмысленным?
+Assistant: Модель начинает со случайных параметров. Маленький набор демонстрационных текстов не даёт ей полноценного знания языка.
+
+User: Где выполняется эксперимент?
+Assistant: Обучение и генерация выполняются на компьютере, где запущена программа. После установки зависимостей отправка текстов внешнему сервису не требуется.
+
+User: Как продолжить развитие?
+Assistant: Сначала нужно измерить работу на независимых примерах. Затем улучшать данные и проверять, какие изменения действительно помогают.
+
+User: Jak ocenić gotowość asystenta?
+Assistant: Należy sprawdzić konkretne zadania na nowych przykładach. Wynik treningu sam w sobie nie potwierdza gotowości do pracy z dokumentami.
+
+User: Co zrobić z błędną odpowiedzią?
+Assistant: Trzeba zapisać przykład błędu, sprawdzić jego przyczynę i ponownie ocenić model po zmianach. Nie należy automatycznie uznawać własnych odpowiedzi modelu za prawdę.
