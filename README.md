@@ -1,5 +1,8 @@
 # IMPERIUM v5
 
+Eksperymentalny własny model językowy, uczony od zera: [Neural Core](ai-core/README.md).
+To osobny prototyp badawczy; nie jest jeszcze podłączony do aplikacji ani danych firmy.
+
 Wewnętrzna aplikacja Android/PWA do zarządzania pracownikami, obiektami, zadaniami, raportami, dyscypliną i systemem punktowym **Imperatorskie Nikitocoiny (NK)**.
 
 ## Najważniejsze funkcje
