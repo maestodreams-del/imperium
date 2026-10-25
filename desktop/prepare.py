@@ -5,10 +5,11 @@ import shutil
 root = Path(__file__).resolve().parent.parent
 dest = root / 'desktop' / 'web'
 dest.mkdir(exist_ok=True)
-for name in ('index.html', 'app.js', 'startup.js', 'biotech.css', 'communications.js', 'communications.css', 'social.js', 'social.css', 'navigation.js', 'navigation-core.js', 'navigation.css', 'leaflet.js', 'leaflet.css', 'leaflet-LICENSE.txt', 'styles.css', 'config.js', 'manifest.webmanifest', 'sw.js', 'invoice-format.js', 'invoice-pdf.js', 'pdf-lib.min.js', 'fontkit.umd.min.js', 'invoice-font-data.js', 'invoice-font-LICENSE.txt', 'pdf-lib-LICENSE.md', 'fontkit-LICENSE.txt', 'pdf.min.mjs', 'pdf.worker.min.mjs', 'pdfjs-LICENSE.txt', 'salary-aurelia.webp'):
+for name in ('index.html', 'legacy.html', 'planner.js', 'planner-core.js', 'planner.css', 'app.js', 'startup.js', 'biotech.css', 'communications.js', 'communications.css', 'social.js', 'social.css', 'navigation.js', 'navigation-core.js', 'navigation.css', 'leaflet.js', 'leaflet.css', 'leaflet-LICENSE.txt', 'styles.css', 'config.js', 'manifest.webmanifest', 'sw.js', 'invoice-format.js', 'invoice-pdf.js', 'pdf-lib.min.js', 'fontkit.umd.min.js', 'invoice-font-data.js', 'invoice-font-LICENSE.txt', 'pdf-lib-LICENSE.md', 'fontkit-LICENSE.txt', 'pdf.min.mjs', 'pdf.worker.min.mjs', 'pdfjs-LICENSE.txt', 'salary-aurelia.webp'):
     shutil.copy2(root / name, dest / name)
 (dest / 'icons').mkdir(exist_ok=True)
 shutil.copy2(root / 'icons' / 'icon.svg', dest / 'icons' / 'icon.svg')
+shutil.copy2(root / 'icons' / 'planner.svg', dest / 'icons' / 'planner.svg')
 (dest / 'sounds').mkdir(exist_ok=True)
 shutil.copy2(root / 'android-wrapper' / 'app' / 'src' / 'main' / 'assets' / 'sounds' / 'imperium_notification.mp3', dest / 'sounds' / 'imperium_notification.mp3')
 source = root / 'android-wrapper' / 'app' / 'src' / 'main' / 'res' / 'drawable' / 'imperium_icon.png'

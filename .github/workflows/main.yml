@@ -2,9 +2,6 @@ name: Build IMPERIUM APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
@@ -32,7 +29,7 @@ jobs:
 
       - name: Verify bundled web UI
         run: |
-          grep -q "Meldunek" android-wrapper/app/src/main/assets/app.js
+          node --check android-wrapper/app/src/main/assets/planner.js
           cmp app.js android-wrapper/app/src/main/assets/app.js
           cmp styles.css android-wrapper/app/src/main/assets/styles.css
 
@@ -45,12 +42,12 @@ jobs:
 
       - name: Rename APK
         run: |
-          cp android-wrapper/app/build/outputs/apk/release/app-release.apk IMPERIUM-6.1.0.apk
+          cp android-wrapper/app/build/outputs/apk/release/app-release.apk IMPERIUM-7.0.0.apk
 
       - name: Upload IMPERIUM APK
         uses: actions/upload-artifact@v4
         with:
-          name: IMPERIUM-6.1.0
-          path: IMPERIUM-6.1.0.apk
+          name: IMPERIUM-7.0.0
+          path: IMPERIUM-7.0.0.apk
           if-no-files-found: error
 

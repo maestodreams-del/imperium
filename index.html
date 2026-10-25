@@ -1,42 +1,11 @@
 <!doctype html>
-<html lang="pl">
+<html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#080c10" />
-  <meta name="description" content="IMPERIUM — ogłoszenia, komunikacja i zarządzanie obiektami." />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="biotech.css" />
-  <link rel="stylesheet" href="communications.css" />
-  <link rel="stylesheet" href="social.css" />
-  <link rel="stylesheet" href="leaflet.css" />
-  <link rel="stylesheet" href="navigation.css" />
-  <title>IMPERIUM</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f5f0"><meta name="description" content="IMPERIUM — личный планировщик Андрея. День, задачи, проекты и время для главного.">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/planner.svg" type="image/svg+xml">
+<link rel="stylesheet" href="planner.css"><title>IMPERIUM · Мой день</title>
 </head>
-<body class="biotech">
-  <div id="boot-screen" class="bio-boot" role="status" aria-label="Uruchamianie IMPERIUM">
-    <div class="boot-corner">UMBRELLA CORPORATION <span>PRIVATE TERMINAL</span></div>
-    <div class="boot-center"><div class="boot-logo"><img src="icons/icon.svg" alt="Umbrella" width="160" height="160"></div><h1>UMBRELLA</h1><p>BIOTECHNOLOGY DIVISION</p><div class="boot-rule"></div><h2>IMPERIUM</h2><div class="boot-stage" id="boot-stage">Uruchamianie systemu</div><div id="boot-progress" class="boot-progress" role="progressbar" aria-label="Postęp uruchamiania" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="boot-fill"></span></div><div class="boot-telemetry"><span>INICJALIZACJA</span><b id="boot-percent">0%</b><span id="boot-countdown">10 s</span></div></div>
-    <div class="boot-bottom">IMPERIUM / BIOTECH SYSTEMS <span>COMMUNICATIONS ONLINE</span></div>
-  </div>
-  <div id="app"></div>
-  <script src="startup.js"></script>
-  <input id="file-input" type="file" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.odt,.ods,.txt,.zip,.rar" multiple hidden />
-  <input id="rental-pdf-input" type="file" accept="application/pdf,.pdf" hidden />
-  <script src="config.js"></script>
-  <script src="invoice-format.js"></script>
-  <script src="pdf-lib.min.js"></script>
-  <script src="fontkit.umd.min.js"></script>
-  <script src="invoice-font-data.js"></script>
-  <script src="invoice-pdf.js"></script>
-  <script src="communications.js"></script>
-  <script src="social.js"></script>
-  <script src="leaflet.js"></script>
-  <script src="navigation-core.js"></script>
-  <script src="navigation.js"></script>
-  <script src="app.js"></script>
-</body>
+<body><div id="app"><div class="loading-screen"><div class="brand-mark">i.</div><p>Собираем твой день…</p></div></div><div id="toast" role="status" aria-live="polite"></div><div id="modal-root"></div>
+<script src="config.js"></script><script src="planner-core.js"></script><script src="planner.js"></script></body>
 </html>
-

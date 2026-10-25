@@ -1,17 +1,1 @@
-{
-  "name": "IMPERIUM",
-  "short_name": "IMPERIUM",
-  "description": "IMPERIUM — prywatne centrum operacyjne",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#080c10",
-  "theme_color": "#080c10",
-  "icons": [
-    {
-      "src": "icons/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ]
-}
+{"name":"IMPERIUM · Мой день","short_name":"IMPERIUM","start_url":"./index.html","display":"standalone","background_color":"#f6f5f0","theme_color":"#294a3e","icons":[{"src":"icons/planner.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}

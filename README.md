@@ -1,52 +1,38 @@
-# IMPERIUM v5
+# IMPERIUM 7 · Personal Planner
 
-Wewnętrzna aplikacja Android/PWA do zarządzania pracownikami, obiektami, zadaniami, raportami, dyscypliną i systemem punktowym **Imperatorskie Nikitocoiny (NK)**.
+Личный планировщик владельца. Android-приложение и адаптивный веб-интерфейс используют существующий Supabase и прежнюю авторизацию.
 
-## Najważniejsze funkcje
-- administrator i pracownicy;
-- logowanie/rejestracja przez Supabase Auth;
-- przypisywanie pracowników do obiektów;
-- tworzenie i edycja zadań oraz obiektów;
-- priorytety, timer, terminy i przedłużanie czasu;
-- zdjęcia, wideo i dokumenty przy zadaniu oraz raporcie;
-- raport, akceptacja oraz zwrot `Do poprawy`;
-- uwagi, wymagania i zaplanowane konsekwencje per zadanie;
-- dewiza **AD GLORIAM IMPERATORIS NIKITAE**;
-- karta pracownika z historią zadań i dyscypliny;
-- **Imperatorskie Nikitocoiny**: saldo i pełny dziennik operacji;
-- przy tworzeniu zadania administrator ustawia `Nagrodę za wykonanie` i `Odjęcie za niewykonanie`;
-- akceptacja zadania automatycznie nalicza bazową nagrodę;
-- przy akceptacji można dopisać dodatkowy bonus za wzorowe wykonanie;
-- decyzja `Niewykonane` odejmuje skonfigurowaną liczbę NK i zwraca zadanie do puli;
-- administrator może ręcznie dodać/odjąć NK z obowiązkowym powodem;
-- wszystkie operacje NK są audytowane z datą, powodem, zadaniem i administratorem;
-- wspólna baza i synchronizacja między telefonami przez Supabase;
-- automatyczna kompilacja APK przez GitHub Actions.
+## Возможности
 
-## Nowa baza Supabase
-1. Utwórz projekt Supabase.
-2. Otwórz SQL Editor.
-3. Uruchom cały plik `backend/schema.sql`.
-4. Wstaw Project URL i publiczny `publishable` / `anon` key do `config.js`.
-5. Pierwsze zarejestrowane konto bootstrapuje się jako administrator.
+- Сегодня, входящие, ближайшие дни, календарь месяца и Kanban.
+- Проекты, приоритеты, избранное, подзадачи, теги, поиск, копирование и перенос сроков.
+- Повторы: ежедневно, по будням, еженедельно и ежемесячно; следующая задача создаётся атомарно после выполнения.
+- Заметки, закрепление, фокус-таймер, история выполненных дел и статистика.
+- Светлая, тёмная и системная темы, мобильная навигация, клавиши N и /.
+- Напоминания Android при закрытом приложении, восстановление после перезагрузки, отмена при выходе.
+- Экспорт JSON и ICS. Старые модули и данные доступны через `legacy.html`.
 
-## Aktualizacja istniejącej bazy v2/v3/v4
-W Supabase SQL Editor uruchom tylko:
+## Данные и доступ
 
-`backend/upgrade-any-to-v5.sql`
+`backend/personal-planner.sql` создаёт отдельные таблицы `planner_*`, не изменяя старые данные. RLS разрешает доступ только серверно определённому владельцу и проверяет `owner_id`. Рекурсивные задачи завершаются через SECURITY INVOKER RPC. Изменения задач и заметок защищены проверкой `updated_at` от незаметной перезаписи.
 
-Nie kasuje istniejących zadań ani kont. Dodaje pola Nikitocoinów, portfel, historię transakcji i RPC do bezpiecznego rozliczania zadań.
+`backend/owner-planner-lock.sql` включает существующий owner-only переключатель и отключает остальные профили, не переписывая глобальные RLS-политики и API hook. В рабочей базе это уже применено; не запускайте скрипт повторно без намерения закрыть доступ.
 
-## Jak działają Nikitocoiny
-Przykład zadania:
-- nagroda: `100 NK`;
-- niewykonanie: `40 NK`.
+Нет сети: доступна последняя сохранённая копия, изменения заблокированы до подключения. Пароли не сохраняются; используется существующая сессия Supabase.
 
-Po wysłaniu raportu administrator wybiera `Akceptuj + NK`. Pracownik dostaje 100 NK plus ewentualny bonus wpisany przez administratora. Jeżeli administrator wybierze `Niewykonane −40 NK`, w historii pojawia się ujemna transakcja, a zadanie wraca do statusu `Nowe`.
+## Android
 
-`Zespół -> Karta` pokazuje bieżące saldo i pełny portfel: nagrody, bonusy, niewykonania i ręczne korekty.
+Версия 7.0.0 / versionCode 18. Устанавливается поверх 6.1 с тем же ключом подписи.
 
-**Nikitocoiny są wewnętrznymi punktami IMPERIUM. Aplikacja nie potrąca automatycznie pieniędzy z wynagrodzenia.**
+Для фоновых уведомлений требуется новая APK и разрешение на уведомления. Для точного времени используется предоставляемое пользователем `SCHEDULE_EXACT_ALARM`; без него Android может задержать уведомление. После изменения задач на другом устройстве приложение нужно открыть для синхронизации расписания. Принудительно остановленные приложения не получают будильники до повторного запуска. На устройстве планируются ближайшие 100 напоминаний.
 
-## APK
-Projekt Android znajduje się w `android-wrapper/`. Workflow `.github/workflows/build-apk.yml` buduje APK w GitHub Actions. Gotowy artefakt nazywa się `IMPERIUM-apk`.
+В браузере и старой APK напоминания доступны при открытом планировщике. Таймер фокуса сохраняет срок окончания; закрытие интерфейса не сбрасывает сессию.
+
+## Проверка и публикация
+
+- `node --check planner.js`
+- `node tests/planner-core.cjs`
+- `psql ... -v ON_ERROR_STOP=1 -f tests/planner-db.sql` (все тестовые строки откатываются).
+- `gradle :app:testDebugUnitTest :app:assembleRelease` в `android-wrapper`.
+
+`.github/workflows/publish-personal-planner.yml` проверяет код, права и повторы, собирает подписанную APK, проверяет байты пакета и активирует Android web-update только после успешных шагов. Секреты берутся из существующих GitHub Actions secrets.

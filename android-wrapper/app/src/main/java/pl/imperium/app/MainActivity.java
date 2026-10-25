@@ -74,11 +74,12 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         AnnouncementAlerts.foreground(this,true);
+        PlannerReminders.restore(this);
         if (web != null) web.post(this::hideSystemBars);
     }
 
     @Override protected void onPause(){AnnouncementAlerts.foreground(this,false);if(navigation!=null)navigation.pause();super.onPause();}
-    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(web!=null&&intent.getBooleanExtra("announcements",false))web.evaluateJavascript("window.dispatchEvent(new Event('imperium-open-announcements'))",null);}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(web!=null&&intent.hasExtra("plannerTaskId"))web.evaluateJavascript("window.dispatchEvent(new Event('imperium-planner-resume'))",null);if(web!=null&&intent.getBooleanExtra("announcements",false))web.evaluateJavascript("window.dispatchEvent(new Event('imperium-open-announcements'))",null);}
     private boolean trustedAppPage(){String url=web==null?null:web.getUrl();if(url==null)return false;try{String path=Uri.parse(url).getPath();return url.startsWith("file:///android_asset/index.html")||(activeWebDir!=null&&path!=null&&new File(path).getCanonicalPath().equals(new File(activeWebDir,"index.html").getCanonicalPath()));}catch(Exception e){return false;}}
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
@@ -100,7 +101,7 @@ private File activeWebDir;
 private File stagingWebDir;
 private static final String UPDATE_PREFS = "imperium_update_prefs";
 private static final String KEY_WEB_VERSION = "web_version";
-private static final int BUNDLED_WEB_VERSION = 50;
+private static final int BUNDLED_WEB_VERSION = 52;
 
 private int getInstalledWebVersion() {
     return getSharedPreferences(
@@ -446,7 +447,7 @@ private void loadImperium() {
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
-        s.setUserAgentString(s.getUserAgentString()+" IMPERIUM/6.1 (+https://github.com/maestodreams-del/imperium)");
+        s.setUserAgentString(s.getUserAgentString()+" IMPERIUM/7.0 (+https://github.com/maestodreams-del/imperium)");
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setAllowFileAccess(true);
@@ -845,6 +846,14 @@ channel.enableVibration(true);
     @Override protected void onDestroy(){if(navigation!=null)navigation.destroy();super.onDestroy();}
 
     public class AndroidBridge {
+        @JavascriptInterface public void schedulePlannerReminders(String json){runOnUiThread(()->{if(trustedAppPage())PlannerReminders.replace(MainActivity.this,json);});}
+        @JavascriptInterface public void clearPlannerReminders(){runOnUiThread(()->{if(trustedAppPage())PlannerReminders.clear(MainActivity.this);});}
+        @JavascriptInterface public String pendingPlannerTask(){String id=getIntent().getStringExtra("plannerTaskId");getIntent().removeExtra("plannerTaskId");return id==null?"":id;}
+        @JavascriptInterface public void requestPlannerExactAlarms(){runOnUiThread(()->{
+            if(!trustedAppPage())return;
+            if(Build.VERSION.SDK_INT>=31){android.app.AlarmManager am=(android.app.AlarmManager)getSystemService(ALARM_SERVICE);if(!am.canScheduleExactAlarms()){startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+getPackageName())));return;}}
+            PlannerReminders.restore(MainActivity.this);Toast.makeText(MainActivity.this,"Точные напоминания включены",Toast.LENGTH_SHORT).show();
+        });}
         @JavascriptInterface public void startNavigationLocation(){runOnUiThread(()->{if(trustedAppPage())navigation.start();});}
         @JavascriptInterface public void stopNavigationLocation(){runOnUiThread(()->{if(trustedAppPage())navigation.stop();});}
         @JavascriptInterface public void speakNavigation(String text){runOnUiThread(()->{if(trustedAppPage())navigation.speak(text);});}
@@ -856,7 +865,7 @@ channel.enableVibration(true);
         @JavascriptInterface
         public String diagnostics() {
             String currentUrl = web != null ? web.getUrl() : "";
-            return "APK=6.1.0; bundled=" + BUNDLED_WEB_VERSION
+            return "APK=7.0.0; bundled=" + BUNDLED_WEB_VERSION
                     + "; installedWeb=" + getInstalledWebVersion()
                     + "; activeIndex=" + (activeWebDir != null && new File(activeWebDir, "index.html").exists())
                     + "; url=" + currentUrl;

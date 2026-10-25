@@ -1,0 +1,25 @@
+begin;
+select set_config('planner.test_owner',(select owner_id::text from public.imperium_access_control where singleton),true);
+select set_config('planner.test_other',(select id::text from public.profiles where id<>(select owner_id from public.imperium_access_control where singleton) limit 1),true);
+set local role authenticated;
+do $$ declare t public.planner_tasks; result jsonb; next_id uuid; other_count integer;begin
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',current_setting('planner.test_owner'),'role','authenticated')::text,true);
+ if not public.imperium_access_status() then raise exception 'Owner locked out'; end if;
+ insert into public.planner_tasks(title,due_date,due_time,repeat_rule,checklist) values('TEST planner recurrence',current_date,'09:00','daily','[{"id":"check1","text":"step","done":true}]') returning * into t;
+ result:=public.planner_complete_task(t.id,t.updated_at);
+ if result->'task'->>'status'<>'done' or result->'next'->>'id' is null then raise exception 'Recurrence failed'; end if;
+ next_id:=(result->'next'->>'id')::uuid;
+ if (result->'next'->>'due_date')::date<=(now() at time zone 'Europe/Warsaw')::date then raise exception 'Recurrence not advanced'; end if;
+ if (result->'next'->'checklist'->0->>'done')::boolean then raise exception 'Checklist not reset'; end if;
+ perform public.planner_complete_task(t.id,t.updated_at);
+ if (select count(*) from public.planner_tasks where source_task_id=t.id)<>1 then raise exception 'Duplicate recurrence'; end if;
+ begin update public.planner_tasks set owner_id=current_setting('planner.test_other')::uuid where id=t.id;raise exception 'Owner reassignment allowed';exception when insufficient_privilege then null;end;
+ perform set_config('request.jwt.claims',jsonb_build_object('sub',current_setting('planner.test_other'),'role','authenticated')::text,true);
+ if exists(select 1 from public.planner_tasks) then raise exception 'Private tasks leaked';end if;
+ if exists(select 1 from public.planner_notes) then raise exception 'Private notes leaked';end if;
+ begin insert into public.planner_notes(title) values('Blocked insert');raise exception 'Outsider insert allowed';exception when insufficient_privilege then null;end;
+ begin perform public.planner_complete_task(next_id,now());raise exception 'Outsider completion allowed';exception when insufficient_privilege then null;end;
+end $$;
+reset role;
+rollback;
+select 'planner access, ownership, recurrence idempotence and checklist reset verified (test rows rolled back)' as verification;
