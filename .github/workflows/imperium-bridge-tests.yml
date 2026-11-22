@@ -1,0 +1,24 @@
+name: IMPERIUM Bridge checks
+
+on:
+  pull_request:
+    paths:
+      - 'desktop/bridge/**'
+      - 'desktop/package.json'
+  push:
+    branches:
+      - 'feature/imperium-local-windows-bridge-20261122'
+
+jobs:
+  syntax-and-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile Python and run safety tests
+        run: |
+          cd desktop
+          python -m compileall -q bridge
+          python -m unittest bridge.test_tools -v
