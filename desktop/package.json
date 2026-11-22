@@ -8,7 +8,10 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
-    "make": "electron-forge make"
+    "make": "electron-forge make",
+    "bridge:smoke": "py -m bridge.smoke_test",
+    "bridge": "py -m bridge.agent",
+    "bridge:test": "py -m unittest bridge.test_tools"
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1"
